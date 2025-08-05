@@ -1,0 +1,171 @@
+rule_name: cross_reference_consistency
+description: "Validate cross-reference consistency between PM datasets"
+category: consistency
+severity: high
+enabled: true
+
+validations:
+  - name: equipment_floc_consistency
+    description: "Check equipment-functional location consistency"
+    type: cross_reference
+    source_table: equipment
+    target_table: functional_locations
+    source_field: FunctionalLocation
+    target_field: FunctionalLocation
+    action: "report_orphaned"
+    
+  - name: order_equipment_consistency
+    description: "Check maintenance order equipment references"
+    type: cross_reference
+    source_table: maintenance_orders
+    target_table: equipment
+    source_field: Equipment
+    target_field: Equipment
+    action: "report_orphaned"
+    
+  - name: order_floc_consistency
+    description: "Check maintenance order functional location references"
+    type: cross_reference
+    source_table: maintenance_orders
+    target_table: functional_locations
+    source_field: FunctionalLocation
+    target_field: FunctionalLocation
+    action: "report_orphaned"
+    
+  - name: notification_references
+    description: "Check notification equipment and functional location references"
+    type: cross_reference
+    source_table: notifications
+    target_tables:
+      - equipment
+      - functional_locations
+    source_fields:
+      - Equipment
+      - FunctionalLocation
+    target_fields:
+      - Equipment
+      - FunctionalLocation
+    action: "report_orphaned"
+
+business_rules:
+  - name: hierarchical_consistency
+    description: "Validate functional location hierarchy"
+    type: hierarchy_validation
+    rules:
+      - "parent_floc must exist in functional_locations table"
+      - "child_floc must be valid sub-location of parent"
+      - "hierarchy_depth must not exceed 5 levels"
+      
+  - name: equipment_category_consistency
+    description: "Validate equipment category consistency"
+    type: business_logic
+    rules:
+      - "if EquipmentCategory == 'F' then FunctionalLocation must be null"
+      - "if EquipmentCategory == 'M' then FunctionalLocation must not be null"
+      - "if EquipmentCategory == 'K' then Equipment must be parent of other equipment"
+      
+  - name: maintenance_plan_consistency
+    description: "Validate maintenance plan references"
+    type: cross_reference
+    source_table: maintenance_plans
+    target_tables:
+      - equipment
+      - functional_locations
+    source_fields:
+      - Equipment
+      - FunctionalLocation
+    target_fields:
+      - Equipment
+      - FunctionalLocation
+
+consistency_rules:
+  - name: data_integrity_check
+    description: "Check referential integrity"
+    type: integrity_validation
+    checks:
+      - "foreign_key_constraints"
+      - "unique_constraints"
+      - "not_null_constraints"
+      
+  - name: business_rule_consistency
+    description: "Validate business rule consistency"
+    type: business_logic
+    rules:
+      - "equipment can only be assigned to one functional location"
+      - "maintenance orders must reference valid equipment or functional location"
+      - "notifications must reference valid equipment or functional location"
+
+metrics:
+  - name: consistency_score
+    calculation: "(total_references - orphaned_references) / total_references * 100"
+    threshold: 98.0
+    
+  - name: data_integrity_score
+    calculation: "passed_integrity_checks / total_integrity_checks * 100"
+    threshold: 100.0
+    
+  - name: cross_reference_accuracy
+    calculation: "valid_cross_references / total_cross_references * 100"
+    threshold: 95.0
+
+notifications:
+  - type: email
+    recipients: ["data.integrity@company.com"]
+    conditions:
+      - consistency_score < 95.0
+      - orphaned_references_count > 50
+      
+  - type: slack
+    channel: "#data-integrity-alerts"
+    conditions:
+      - severity == "high"
+      - data_integrity_score < 100.0
+      
+  - type: dashboard
+    conditions:
+      - consistency_score < 98.0
+      - cross_reference_accuracy < 95.0
+
+remediation_actions:
+  - name: auto_correction
+    description: "Automatically correct obvious reference issues"
+    conditions:
+      - "orphaned_references_count < 100"
+      - "confidence_score > 0.8"
+    actions:
+      - "update_references"
+      - "log_corrections"
+      
+  - name: manual_review
+    description: "Flag issues for manual review"
+    conditions:
+      - "orphaned_references_count >= 100"
+      - "confidence_score <= 0.8"
+    actions:
+      - "create_review_tickets"
+      - "notify_data_team"
+      
+  - name: data_cleanup
+    description: "Schedule data cleanup tasks"
+    conditions:
+      - "consistency_score < 90.0"
+    actions:
+      - "schedule_cleanup_job"
+      - "notify_management"
+
+reporting:
+  - name: consistency_report
+    frequency: "daily"
+    recipients: ["data.team@company.com"]
+    content:
+      - "orphaned_references_summary"
+      - "consistency_scores"
+      - "remediation_actions"
+      
+  - name: management_dashboard
+    frequency: "weekly"
+    recipients: ["management@company.com"]
+    content:
+      - "overall_consistency_score"
+      - "trend_analysis"
+      - "business_impact" 

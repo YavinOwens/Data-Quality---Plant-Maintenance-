@@ -1,0 +1,706 @@
+#!/usr/bin/env python3
+"""
+SAP S/4HANA Data Quality Logging & Reporting Service
+Provides web dashboard, REST API, and reporting functionality
+"""
+
+import os
+import json
+import logging
+import sys
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Any
+from pathlib import Path
+
+import pandas as pd
+import numpy as np
+from flask import Flask, request, jsonify, render_template, send_file
+from flask_cors import CORS
+from flask_restful import Api, Resource
+from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
+import structlog
+from sqlalchemy import create_engine, text, func
+import plotly.graph_objs as go
+import plotly.utils
+from io import BytesIO
+import openpyxl
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph
+from reportlab.lib.styles import getSampleStyleSheet
+
+# Configure structured logging
+structlog.configure(
+    processors=[
+        structlog.stdlib.filter_by_level,
+        structlog.stdlib.add_logger_name,
+        structlog.stdlib.add_log_level,
+        structlog.stdlib.PositionalArgumentsFormatter(),
+        structlog.processors.TimeStamper(fmt="iso"),
+        structlog.processors.StackInfoRenderer(),
+        structlog.processors.format_exc_info,
+        structlog.processors.UnicodeDecoder(),
+        structlog.processors.JSONRenderer()
+    ],
+    context_class=dict,
+    logger_factory=structlog.stdlib.LoggerFactory(),
+    wrapper_class=structlog.stdlib.BoundLogger,
+    cache_logger_on_first_use=True,
+)
+
+logger = structlog.get_logger()
+
+# Also set up regular logging for debugging
+logging.basicConfig(level=logging.INFO, stream=sys.stderr)
+
+app = Flask(__name__)
+CORS(app)
+api = Api(app)
+
+# Prometheus metrics
+REQUEST_COUNT = Counter('logging_service_requests_total', 'Total requests', ['endpoint'])
+REQUEST_LATENCY = Histogram('logging_service_request_duration_seconds', 'Request latency')
+REPORT_GENERATION_COUNT = Counter('logging_service_reports_generated_total', 'Reports generated', ['report_type'])
+
+class DataQualityReporter:
+    """Handles data quality reporting and analytics"""
+    
+    def __init__(self):
+        self.db_host = os.getenv('DB_HOST', 'postgres')
+        self.db_name = os.getenv('DB_NAME', 'sap_data_quality')
+        self.db_user = os.getenv('DB_USER', 'sap_user')
+        self.db_password = os.getenv('DB_PASSWORD', 'your_db_password')
+        
+        # Initialize database connection
+        self.db_engine = create_engine(
+            f"postgresql://{self.db_user}:{self.db_password}@{self.db_host}:5432/{self.db_name}"
+        )
+    
+    def get_validation_summary(self, days: int = 30) -> Dict[str, Any]:
+        """Get validation summary for the last N days"""
+        try:
+            since_date = datetime.utcnow() - timedelta(days=days)
+            
+            query = text("""
+                SELECT 
+                    validation_type as dataset_name,
+                    validation_name as rule_name,
+                    COUNT(*) as count,
+                    AVG(success_rate) as success_rate,
+                    SUM(passed_records) as total_passed,
+                    SUM(failed_records) as total_failed
+                FROM validation_results 
+                WHERE created_at >= :since_date
+                GROUP BY validation_type, validation_name
+                ORDER BY validation_type, validation_name
+            """)
+            
+            with self.db_engine.connect() as conn:
+                result = conn.execute(query, {'since_date': since_date})
+                rows = result.fetchall()
+            
+            summary = {}
+            for row in rows:
+                dataset = row.dataset_name
+                if dataset not in summary:
+                    summary[dataset] = {
+                        'total_validations': 0,
+                        'passed_validations': 0,
+                        'failed_validations': 0,
+                        'success_rate': 0.0,
+                        'rules': {}
+                    }
+                
+                summary[dataset]['total_validations'] += row.count
+                summary[dataset]['passed_validations'] += row._mapping['total_passed'] or 0
+                summary[dataset]['failed_validations'] += row._mapping['total_failed'] or 0
+                
+                # Convert Decimal to float for JSON serialization
+                success_rate = float(row.success_rate) if hasattr(row.success_rate, '__float__') else row.success_rate
+                summary[dataset]['avg_success_rate'] = success_rate
+                
+                if row.rule_name not in summary[dataset]['rules']:
+                    summary[dataset]['rules'][row.rule_name] = {
+                        'total': 0,
+                        'passed': 0,
+                        'failed': 0,
+                        'success_rate': 0.0,
+                        'avg_success_rate': 0.0
+                    }
+                
+                summary[dataset]['rules'][row.rule_name]['total'] += row.count
+                summary[dataset]['rules'][row.rule_name]['passed'] += row.total_passed or 0
+                summary[dataset]['rules'][row.rule_name]['failed'] += row.total_failed or 0
+                summary[dataset]['rules'][row.rule_name]['avg_success_rate'] = success_rate
+            
+            # Calculate success rates using actual database values
+            for dataset in summary.values():
+                if dataset['total_validations'] > 0:
+                    # Use the actual success_rate from database, not calculated from passed/failed counts
+                    avg_rate = dataset.get('avg_success_rate', 0)
+                    if hasattr(avg_rate, '__float__'):
+                        avg_rate = float(avg_rate)
+                    dataset['success_rate'] = avg_rate * 100
+                
+                for rule in dataset['rules'].values():
+                    if rule['total'] > 0:
+                        # Use the actual success_rate from database
+                        avg_rate = rule.get('avg_success_rate', 0)
+                        if hasattr(avg_rate, '__float__'):
+                            avg_rate = float(avg_rate)
+                        rule['success_rate'] = avg_rate * 100
+            
+            return summary
+            
+        except Exception as e:
+            logger.error(f"Failed to get validation summary: {str(e)}")
+            return {}
+    
+    def get_recent_issues(self, limit: int = 50) -> List[Dict[str, Any]]:
+        """Get recent validation issues"""
+        try:
+            query = text("""
+                SELECT 
+                    id,
+                    validation_type as dataset_name,
+                    validation_name as rule_name,
+                    CASE WHEN success_rate >= 0.95 THEN 'passed' ELSE 'failed' END as status,
+                    error_details as results,
+                    created_at
+                FROM validation_results 
+                ORDER BY created_at DESC
+                LIMIT :limit
+            """)
+            
+            with self.db_engine.connect() as conn:
+                result = conn.execute(query, {'limit': limit})
+                rows = result.fetchall()
+            
+            print(f"DEBUG: Database query returned {len(rows)} rows", file=sys.stderr)
+            print(f"DEBUG: Row IDs: {[row.id for row in rows]}", file=sys.stderr)
+            print(f"DEBUG: Row statuses: {[row.status for row in rows]}", file=sys.stderr)
+            print(f"DEBUG: Row dataset_names: {[row.dataset_name for row in rows]}", file=sys.stderr)
+            issues = []
+            for row in rows:
+                print(f"DEBUG: Processing row {row.id}: {row.dataset_name} - {row.status}", file=sys.stderr)
+                try:
+                    # Simplified processing - just use the raw results
+                    issues_list = [row.results] if row.results else []
+                    metrics = {}
+                    
+                    issue_data = {
+                        'id': row.id,
+                        'dataset_name': row.dataset_name,
+                        'rule_name': row.rule_name,
+                        'status': row.status,
+                        'issues': issues_list,
+                        'metrics': metrics,
+                        'created_at': row.created_at.isoformat()
+                    }
+                    
+                    issues.append(issue_data)
+                    print(f"DEBUG: Added row {row.id} to issues list", file=sys.stderr)
+                except Exception as e:
+                    print(f"DEBUG: Exception processing row {row.id}: {str(e)}", file=sys.stderr)
+                    logger.error(f"Failed to parse results for row {row.id}: {str(e)}")
+            
+            print(f"DEBUG: Final issues list length: {len(issues)}", file=sys.stderr)
+            print(f"DEBUG: Final issues IDs: {[issue['id'] for issue in issues]}", file=sys.stderr)
+            
+            return issues
+            
+        except Exception as e:
+            logger.error(f"Failed to get recent issues: {str(e)}")
+            return []
+    
+    def get_quality_trends(self, days: int = 30) -> Dict[str, Any]:
+        """Get data quality trends over time"""
+        try:
+            since_date = datetime.utcnow() - timedelta(days=days)
+            
+            query = text("""
+                SELECT 
+                    DATE(created_at) as date,
+                    validation_type as dataset_name,
+                    CASE WHEN success_rate >= 0.95 THEN 'passed' ELSE 'failed' END as status,
+                    COUNT(*) as count
+                FROM validation_results 
+                WHERE created_at >= :since_date
+                GROUP BY DATE(created_at), validation_type, CASE WHEN success_rate >= 0.95 THEN 'passed' ELSE 'failed' END
+                ORDER BY date, dataset_name, status
+            """)
+            
+            with self.db_engine.connect() as conn:
+                result = conn.execute(query, {'since_date': since_date})
+                rows = result.fetchall()
+            
+            trends = {}
+            for row in rows:
+                date_str = row.date.isoformat()
+                dataset = row.dataset_name
+                
+                if dataset not in trends:
+                    trends[dataset] = {}
+                
+                if date_str not in trends[dataset]:
+                    trends[dataset][date_str] = {
+                        'passed': 0,
+                        'failed': 0,
+                        'error': 0,
+                        'total': 0
+                    }
+                
+                trends[dataset][date_str][row.status] = row.count
+                trends[dataset][date_str]['total'] += row.count
+            
+            return trends
+            
+        except Exception as e:
+            logger.error(f"Failed to get quality trends: {str(e)}")
+            return {}
+    
+    def generate_quality_report(self, dataset_name: str = None, days: int = 30) -> Dict[str, Any]:
+        """Generate comprehensive quality report"""
+        try:
+            summary = self.get_validation_summary(days)
+            issues = self.get_recent_issues(100)
+            trends = self.get_quality_trends(days)
+            
+            # Filter by dataset if specified
+            if dataset_name:
+                summary = {dataset_name: summary.get(dataset_name, {})}
+                issues = [issue for issue in issues if issue['dataset_name'] == dataset_name]
+                trends = {dataset_name: trends.get(dataset_name, {})}
+            
+            # Calculate overall metrics
+            total_validations = sum(dataset['total_validations'] for dataset in summary.values())
+            total_passed = sum(dataset['passed_validations'] for dataset in summary.values())
+            overall_success_rate = (total_passed / total_validations * 100) if total_validations > 0 else 0
+            
+            report = {
+                'generated_at': datetime.utcnow().isoformat(),
+                'period_days': days,
+                'overall_metrics': {
+                    'total_validations': total_validations,
+                    'total_passed': total_passed,
+                    'total_failed': total_validations - total_passed,
+                    'overall_success_rate': overall_success_rate
+                },
+                'dataset_summary': summary,
+                'recent_issues': issues,
+                'quality_trends': trends
+            }
+            
+            return report
+            
+        except Exception as e:
+            logger.error(f"Failed to generate quality report: {str(e)}")
+            return {
+                'error': str(e),
+                'generated_at': datetime.utcnow().isoformat()
+            }
+
+# Initialize reporter
+reporter = DataQualityReporter()
+
+# API Resources
+class ValidationSummaryResource(Resource):
+    """API endpoint for validation summary"""
+    
+    def get(self):
+        """Get validation summary"""
+        REQUEST_COUNT.labels(endpoint='validation_summary').inc()
+        
+        try:
+            days = request.args.get('days', 30, type=int)
+            summary = reporter.get_validation_summary(days)
+            
+            return {
+                'status': 'success',
+                'data': summary,
+                'timestamp': datetime.utcnow().isoformat()
+            }
+            
+        except Exception as e:
+            logger.error(f"Validation summary failed: {str(e)}")
+            return {
+                'status': 'error',
+                'message': str(e)
+            }, 500
+
+class RecentIssuesResource(Resource):
+    """API endpoint for recent issues"""
+    
+    def get(self):
+        """Get recent validation issues"""
+        REQUEST_COUNT.labels(endpoint='recent_issues').inc()
+        
+        try:
+            limit = request.args.get('limit', 50, type=int)
+            logger.info(f"Getting recent issues with limit: {limit}")
+            issues = reporter.get_recent_issues(limit)
+            logger.info(f"Retrieved {len(issues)} issues")
+            
+            return {
+                'status': 'success',
+                'data': issues,
+                'timestamp': datetime.utcnow().isoformat()
+            }
+            
+        except Exception as e:
+            logger.error(f"Recent issues failed: {str(e)}")
+            return {
+                'status': 'error',
+                'message': str(e)
+            }, 500
+
+class QualityReportResource(Resource):
+    """API endpoint for quality reports"""
+    
+    def get(self):
+        """Generate quality report"""
+        REQUEST_COUNT.labels(endpoint='quality_report').inc()
+        
+        try:
+            dataset_name = request.args.get('dataset')
+            days = request.args.get('days', 30, type=int)
+            
+            report = reporter.generate_quality_report(dataset_name, days)
+            REPORT_GENERATION_COUNT.labels(report_type='quality_report').inc()
+            
+            return {
+                'status': 'success',
+                'data': report,
+                'timestamp': datetime.utcnow().isoformat()
+            }
+            
+        except Exception as e:
+            logger.error(f"Quality report failed: {str(e)}")
+            return {
+                'status': 'error',
+                'message': str(e)
+            }, 500
+
+# Register API resources
+api.add_resource(ValidationSummaryResource, '/api/validation-summary')
+api.add_resource(RecentIssuesResource, '/api/recent-issues')
+api.add_resource(QualityReportResource, '/api/quality-report')
+
+# Web Routes
+@app.route('/')
+def dashboard():
+    """Main dashboard page"""
+    REQUEST_COUNT.labels(endpoint='dashboard').inc()
+    return render_template('dashboard.html')
+
+@app.route('/health')
+def health_check():
+    """Health check endpoint"""
+    REQUEST_COUNT.labels(endpoint='health').inc()
+    return jsonify({
+        'status': 'healthy',
+        'timestamp': datetime.utcnow().isoformat(),
+        'service': 'logging-service'
+    })
+
+@app.route('/metrics')
+def metrics():
+    """Prometheus metrics endpoint"""
+    REQUEST_COUNT.labels(endpoint='metrics').inc()
+    return generate_latest(), 200, {'Content-Type': CONTENT_TYPE_LATEST}
+
+@app.route('/api/export/csv')
+def export_csv():
+    """Export validation results as CSV"""
+    REQUEST_COUNT.labels(endpoint='export_csv').inc()
+    
+    try:
+        days = request.args.get('days', 30, type=int)
+        dataset_name = request.args.get('dataset')
+        
+        # Get validation results
+        since_date = datetime.utcnow() - timedelta(days=days)
+        
+        query = text("""
+            SELECT 
+                dataset_name,
+                rule_name,
+                status,
+                created_at,
+                results
+            FROM validation_results 
+            WHERE created_at >= :since_date
+        """)
+        
+        params = {'since_date': since_date}
+        if dataset_name:
+            query = text(str(query) + " AND dataset_name = :dataset_name")
+            params['dataset_name'] = dataset_name
+        
+        with reporter.db_engine.connect() as conn:
+            result = conn.execute(query, params)
+            rows = result.fetchall()
+        
+        # Convert to DataFrame
+        data = []
+        for row in rows:
+            try:
+                results_data = json.loads(row.results) if row.results else {}
+                data.append({
+                    'dataset_name': row.dataset_name,
+                    'rule_name': row.rule_name,
+                    'status': row.status,
+                    'created_at': row.created_at.isoformat(),
+                    'issues_count': len(results_data.get('issues', [])),
+                    'metrics': json.dumps(results_data.get('metrics', {}))
+                })
+            except Exception as e:
+                logger.error(f"Failed to parse row: {str(e)}")
+        
+        df = pd.DataFrame(data)
+        
+        # Create CSV
+        output = BytesIO()
+        df.to_csv(output, index=False)
+        output.seek(0)
+        
+        filename = f"validation_results_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv"
+        
+        REPORT_GENERATION_COUNT.labels(report_type='csv_export').inc()
+        
+        return send_file(
+            BytesIO(output.getvalue()),
+            mimetype='text/csv',
+            as_attachment=True,
+            download_name=filename
+        )
+        
+    except Exception as e:
+        logger.error(f"CSV export failed: {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@app.route('/api/export/excel')
+def export_excel():
+    """Export validation results as Excel"""
+    REQUEST_COUNT.labels(endpoint='export_excel').inc()
+    
+    try:
+        days = request.args.get('days', 30, type=int)
+        dataset_name = request.args.get('dataset')
+        
+        # Get validation results
+        since_date = datetime.utcnow() - timedelta(days=days)
+        
+        query = text("""
+            SELECT 
+                dataset_name,
+                rule_name,
+                status,
+                created_at,
+                results
+            FROM validation_results 
+            WHERE created_at >= :since_date
+        """)
+        
+        params = {'since_date': since_date}
+        if dataset_name:
+            query = text(str(query) + " AND dataset_name = :dataset_name")
+            params['dataset_name'] = dataset_name
+        
+        with reporter.db_engine.connect() as conn:
+            result = conn.execute(query, params)
+            rows = result.fetchall()
+        
+        # Convert to DataFrame
+        data = []
+        for row in rows:
+            try:
+                results_data = json.loads(row.results) if row.results else {}
+                data.append({
+                    'dataset_name': row.dataset_name,
+                    'rule_name': row.rule_name,
+                    'status': row.status,
+                    'created_at': row.created_at.isoformat(),
+                    'issues_count': len(results_data.get('issues', [])),
+                    'metrics': json.dumps(results_data.get('metrics', {}))
+                })
+            except Exception as e:
+                logger.error(f"Failed to parse row: {str(e)}")
+        
+        df = pd.DataFrame(data)
+        
+        # Create Excel file
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, sheet_name='Validation Results', index=False)
+            
+            # Add summary sheet
+            summary_data = []
+            for dataset in df['dataset_name'].unique():
+                dataset_df = df[df['dataset_name'] == dataset]
+                total = len(dataset_df)
+                passed = len(dataset_df[dataset_df['status'] == 'passed'])
+                failed = len(dataset_df[dataset_df['status'] == 'failed'])
+                success_rate = (passed / total * 100) if total > 0 else 0
+                
+                summary_data.append({
+                    'dataset_name': dataset,
+                    'total_validations': total,
+                    'passed': passed,
+                    'failed': failed,
+                    'success_rate': f"{success_rate:.2f}%"
+                })
+            
+            summary_df = pd.DataFrame(summary_data)
+            summary_df.to_excel(writer, sheet_name='Summary', index=False)
+        
+        output.seek(0)
+        
+        filename = f"validation_results_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        
+        REPORT_GENERATION_COUNT.labels(report_type='excel_export').inc()
+        
+        return send_file(
+            BytesIO(output.getvalue()),
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True,
+            download_name=filename
+        )
+        
+    except Exception as e:
+        logger.error(f"Excel export failed: {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@app.route('/api/export/pdf')
+def export_pdf():
+    """Export validation results as PDF"""
+    REQUEST_COUNT.labels(endpoint='export_pdf').inc()
+    
+    try:
+        days = request.args.get('days', 30, type=int)
+        dataset_name = request.args.get('dataset')
+        
+        # Generate quality report
+        report = reporter.generate_quality_report(dataset_name, days)
+        
+        # Create PDF
+        output = BytesIO()
+        doc = SimpleDocTemplate(output, pagesize=letter)
+        styles = getSampleStyleSheet()
+        story = []
+        
+        # Title
+        title = Paragraph("SAP S/4HANA Data Quality Report", styles['Title'])
+        story.append(title)
+        story.append(Paragraph(f"Generated: {report['generated_at']}", styles['Normal']))
+        story.append(Paragraph(f"Period: {days} days", styles['Normal']))
+        story.append(Paragraph("<br/>", styles['Normal']))
+        
+        # Overall metrics
+        if 'overall_metrics' in report:
+            metrics = report['overall_metrics']
+            metrics_data = [
+                ['Metric', 'Value'],
+                ['Total Validations', metrics['total_validations']],
+                ['Total Passed', metrics['total_passed']],
+                ['Total Failed', metrics['total_failed']],
+                ['Success Rate', f"{metrics['overall_success_rate']:.2f}%"]
+            ]
+            
+            metrics_table = Table(metrics_data)
+            metrics_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), '#CCCCCC'),
+                ('TEXTCOLOR', (0, 0), (-1, 0), '#000000'),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 12),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('BACKGROUND', (0, 1), (-1, -1), '#F0F0F0'),
+                ('GRID', (0, 0), (-1, -1), 1, '#000000')
+            ]))
+            story.append(metrics_table)
+            story.append(Paragraph("<br/>", styles['Normal']))
+        
+        # Dataset summary
+        if 'dataset_summary' in report:
+            story.append(Paragraph("Dataset Summary", styles['Heading2']))
+            
+            for dataset_name, dataset_data in report['dataset_summary'].items():
+                story.append(Paragraph(f"Dataset: {dataset_name}", styles['Heading3']))
+                
+                dataset_metrics = [
+                    ['Metric', 'Value'],
+                    ['Total Validations', dataset_data['total_validations']],
+                    ['Passed Validations', dataset_data['passed_validations']],
+                    ['Failed Validations', dataset_data['failed_validations']],
+                    ['Success Rate', f"{dataset_data['success_rate']:.2f}%"]
+                ]
+                
+                dataset_table = Table(dataset_metrics)
+                dataset_table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (-1, 0), '#CCCCCC'),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), '#000000'),
+                    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, 0), 10),
+                    ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+                    ('BACKGROUND', (0, 1), (-1, -1), '#F0F0F0'),
+                    ('GRID', (0, 0), (-1, -1), 1, '#000000')
+                ]))
+                story.append(dataset_table)
+                story.append(Paragraph("<br/>", styles['Normal']))
+        
+        # Recent issues
+        if 'recent_issues' in report and report['recent_issues']:
+            story.append(Paragraph("Recent Issues", styles['Heading2']))
+            
+            issues_data = [['Dataset', 'Rule', 'Status', 'Created']]
+            for issue in report['recent_issues'][:10]:  # Limit to 10 issues
+                issues_data.append([
+                    issue['dataset_name'],
+                    issue['rule_name'],
+                    issue['status'],
+                    issue['created_at'][:10]  # Date only
+                ])
+            
+            issues_table = Table(issues_data)
+            issues_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), '#CCCCCC'),
+                ('TEXTCOLOR', (0, 0), (-1, 0), '#000000'),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+                ('BACKGROUND', (0, 1), (-1, -1), '#F0F0F0'),
+                ('GRID', (0, 0), (-1, -1), 1, '#000000')
+            ]))
+            story.append(issues_table)
+        
+        doc.build(story)
+        output.seek(0)
+        
+        filename = f"data_quality_report_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.pdf"
+        
+        REPORT_GENERATION_COUNT.labels(report_type='pdf_export').inc()
+        
+        return send_file(
+            BytesIO(output.getvalue()),
+            mimetype='application/pdf',
+            as_attachment=True,
+            download_name=filename
+        )
+        
+    except Exception as e:
+        logger.error(f"PDF export failed: {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=8080, debug=False) 

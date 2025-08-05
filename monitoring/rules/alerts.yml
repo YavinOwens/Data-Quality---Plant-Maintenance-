@@ -1,0 +1,99 @@
+groups:
+  - name: data_quality_alerts
+    rules:
+      # High error rate alert
+      - alert: HighValidationErrorRate
+        expr: data_quality:error_rate > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High validation error rate"
+          description: "Validation error rate is {{ $value }}%"
+
+      # Low success rate alert
+      - alert: LowValidationSuccessRate
+        expr: data_quality:success_rate < 90
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Low validation success rate"
+          description: "Validation success rate is {{ $value }}%"
+
+      # High validation latency alert
+      - alert: HighValidationLatency
+        expr: data_quality:validation_latency_seconds > 30
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High validation latency"
+          description: "Validation latency is {{ $value }} seconds"
+
+      # Service down alerts
+      - alert: SAPConnectorDown
+        expr: up{job="sap-connector"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "SAP Connector is down"
+          description: "SAP Connector service is not responding"
+
+      - alert: ValidationEngineDown
+        expr: up{job="validation-engine"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Validation Engine is down"
+          description: "Validation Engine service is not responding"
+
+      - alert: LoggingServiceDown
+        expr: up{job="logging-service"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Logging Service is down"
+          description: "Logging Service is not responding"
+
+      - alert: DatabaseDown
+        expr: up{job="postgres"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Database is down"
+          description: "PostgreSQL database is not responding"
+
+      # High memory usage
+      - alert: HighMemoryUsage
+        expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage"
+          description: "Memory usage is {{ $value }}%"
+
+      # High disk usage
+      - alert: HighDiskUsage
+        expr: (node_filesystem_size_bytes - node_filesystem_free_bytes) / node_filesystem_size_bytes * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High disk usage"
+          description: "Disk usage is {{ $value }}%"
+
+      # High CPU usage
+      - alert: HighCPUUsage
+        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage"
+          description: "CPU usage is {{ $value }}%" 

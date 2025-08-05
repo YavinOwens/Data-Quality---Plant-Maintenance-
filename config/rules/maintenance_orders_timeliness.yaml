@@ -1,0 +1,108 @@
+rule_name: maintenance_orders_timeliness
+description: "Validate maintenance order timeliness and status"
+category: timeliness
+severity: high
+enabled: true
+
+validations:
+  - name: overdue_orders_check
+    description: "Check for overdue maintenance orders"
+    type: status_validation
+    conditions:
+      - MaintenanceOrderIsReleased == true
+      - MaintenanceOrderIsCompleted == false
+    threshold: 0.1  # 10% overdue allowed
+    
+  - name: incomplete_orders_check
+    description: "Check for orders without functional location or equipment"
+    type: missing_references
+    fields:
+      - FunctionalLocation
+      - Equipment
+    condition: "both_missing"
+    threshold: 0.05  # 5% incomplete allowed
+    
+  - name: order_status_consistency
+    description: "Validate order status consistency"
+    type: business_logic
+    rules:
+      - "if MaintenanceOrderIsCompleted == true then MaintenanceOrderIsReleased == true"
+      - "if MaintenanceOrderIsClosed == true then MaintenanceOrderIsCompleted == true"
+    threshold: 0.0  # No inconsistencies allowed
+
+business_rules:
+  - name: order_priority_validation
+    description: "Validate order priority based on type"
+    condition: "MaintenanceOrderType in ['PM', 'CM', 'EM']"
+    rules:
+      - "if MaintenanceOrderType == 'PM' then priority should be 'MEDIUM' or 'LOW'"
+      - "if MaintenanceOrderType == 'CM' then priority should be 'HIGH'"
+      - "if MaintenanceOrderType == 'EM' then priority should be 'CRITICAL'"
+      
+  - name: work_center_assignment
+    description: "Check work center assignment for released orders"
+    condition: "MaintenanceOrderIsReleased == true"
+    required_fields:
+      - WorkCenter
+    message: "Released orders must have work center assigned"
+
+timeliness_rules:
+  - name: order_aging_analysis
+    description: "Analyze order aging"
+    thresholds:
+      - age_days: 7
+        severity: warning
+        action: "Review order status"
+      - age_days: 14
+        severity: high
+        action: "Escalate to supervisor"
+      - age_days: 30
+        severity: critical
+        action: "Immediate attention required"
+        
+  - name: completion_time_validation
+    description: "Validate completion time against planned time"
+    calculation: "actual_completion_time - planned_completion_time"
+    threshold_hours: 24
+    tolerance_percentage: 20
+
+metrics:
+  - name: timeliness_score
+    calculation: "(total_orders - overdue_orders) / total_orders * 100"
+    threshold: 90.0
+    
+  - name: completion_rate
+    calculation: "completed_orders / total_orders * 100"
+    threshold: 85.0
+    
+  - name: average_completion_time
+    calculation: "AVG(completion_time - creation_time)"
+    unit: "hours"
+    threshold: 72.0
+
+notifications:
+  - type: email
+    recipients: ["maintenance.team@company.com"]
+    conditions:
+      - overdue_orders_count > 50
+      - timeliness_score < 85.0
+      
+  - type: slack
+    channel: "#maintenance-alerts"
+    conditions:
+      - severity == "critical"
+      - order_age > 30
+      
+  - type: dashboard
+    conditions:
+      - timeliness_score < 90.0
+      - completion_rate < 85.0
+
+escalation_rules:
+  - trigger: "overdue_orders_count > 100"
+    action: "notify_management"
+    recipients: ["plant.manager@company.com"]
+    
+  - trigger: "timeliness_score < 80.0"
+    action: "schedule_review_meeting"
+    recipients: ["maintenance.supervisor@company.com"] 

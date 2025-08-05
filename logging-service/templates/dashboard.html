@@ -1,0 +1,2849 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SAP S/4HANA Data Quality Dashboard</title>
+    
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Font Awesome -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js?v=3"></script>
+    <!-- Plotly.js -->
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js?v=3"></script>
+    
+    <style>
+        :root {
+            --primary-color: #2c3e50;
+            --secondary-color: #3498db;
+            --success-color: #27ae60;
+            --warning-color: #f39c12;
+            --danger-color: #e74c3c;
+            --light-bg: #f8f9fa;
+            --dark-bg: #343a40;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--light-bg);
+        }
+        
+        .navbar-brand {
+            font-weight: bold;
+            color: var(--primary-color) !important;
+        }
+        
+        .card {
+            border: none;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        
+        .card-header {
+            background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+            color: white;
+            border-radius: 10px 10px 0 0 !important;
+            font-weight: bold;
+        }
+        
+        .metric-card {
+            text-align: center;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .metric-value {
+            font-size: 2.5rem;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        
+        .metric-label {
+            font-size: 1rem;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .success-bg { background: linear-gradient(135deg, var(--success-color), #2ecc71); color: white; }
+        .warning-bg { background: linear-gradient(135deg, var(--warning-color), #f1c40f); color: white; }
+        .danger-bg { background: linear-gradient(135deg, var(--danger-color), #c0392b); color: white; }
+        .info-bg { background: linear-gradient(135deg, var(--secondary-color), #2980b9); color: white; }
+        
+        .table {
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        
+        .table thead th {
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            font-weight: bold;
+        }
+        
+        .btn-custom {
+            border-radius: 25px;
+            padding: 10px 25px;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 50px;
+        }
+        
+        .spinner-border {
+            width: 3rem;
+            height: 3rem;
+        }
+
+        /* Sidebar Styles */
+        .sidebar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 100vh;
+            width: 250px;
+            background: linear-gradient(135deg, #2c3e50, #34495e);
+            color: white;
+            z-index: 1000;
+            transition: transform 0.3s ease;
+            box-shadow: 2px 0 10px rgba(0,0,0,0.1);
+        }
+
+        .sidebar.collapsed {
+            transform: translateX(-250px);
+        }
+
+        .sidebar-header {
+            padding: 20px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .sidebar-title {
+            font-weight: bold;
+            font-size: 1.1rem;
+        }
+
+        .sidebar-toggle {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 1.2rem;
+        }
+
+        .sidebar-nav {
+            padding: 20px 0;
+        }
+
+        .sidebar-nav .nav-link {
+            color: rgba(255,255,255,0.8);
+            padding: 12px 20px;
+            border: none;
+            transition: all 0.3s ease;
+        }
+
+        .sidebar-nav .nav-link:hover,
+        .sidebar-nav .nav-link.active {
+            color: white;
+            background: rgba(255,255,255,0.1);
+            border-left: 4px solid #3498db;
+        }
+
+        .sidebar-footer {
+            position: absolute;
+            bottom: 0;
+            width: 100%;
+            padding: 15px 20px;
+            border-top: 1px solid rgba(255,255,255,0.1);
+            background: rgba(0,0,0,0.1);
+        }
+
+        /* Main Content */
+        .main-content {
+            margin-left: 250px;
+            transition: margin-left 0.3s ease;
+        }
+
+        .main-content.expanded {
+            margin-left: 0;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .sidebar {
+                transform: translateX(-250px);
+            }
+            
+            .sidebar.expanded {
+                transform: translateX(0);
+            }
+            
+            .main-content {
+                margin-left: 0;
+            }
+        }
+        
+        .alert {
+            border-radius: 10px;
+            border: none;
+        }
+        
+        .progress {
+            height: 10px;
+            border-radius: 5px;
+        }
+        
+        .badge {
+            border-radius: 15px;
+            padding: 8px 15px;
+            font-size: 0.8rem;
+        }
+    </style>
+</head>
+    <body>
+        <!-- Sidebar -->
+        <div class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <div>
+                    <i class="fas fa-chart-line me-2"></i>
+                    <span class="sidebar-title">Data Quality</span>
+                </div>
+                <button class="sidebar-toggle" onclick="toggleSidebar()">
+                    <i class="fas fa-bars"></i>
+                </button>
+            </div>
+            <nav class="sidebar-nav">
+                <ul class="nav flex-column">
+                    <li class="nav-item">
+                        <a class="nav-link active" href="#dashboard" onclick="showSection('dashboard')">
+                            <i class="fas fa-tachometer-alt me-2"></i>
+                            <span>Dashboard</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#trends" onclick="showSection('trends')">
+                            <i class="fas fa-chart-line me-2"></i>
+                            <span>Quality Trends</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#issues" onclick="showSection('issues')">
+                            <i class="fas fa-exclamation-triangle me-2"></i>
+                            <span>Recent Issues</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#reports" onclick="showSection('reports')">
+                            <i class="fas fa-file-alt me-2"></i>
+                            <span>Reports</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#rules" onclick="showSection('rules')">
+                            <i class="fas fa-shield-alt me-2"></i>
+                            <span>Rules & Validations</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#risks" onclick="showSection('risks')">
+                            <i class="fas fa-exclamation-triangle me-2"></i>
+                            <span>Risk Register</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#settings" onclick="showSection('settings')">
+                            <i class="fas fa-cog me-2"></i>
+                            <span>Settings</span>
+                        </a>
+                    </li>
+                </ul>
+            </nav>
+            <div class="sidebar-footer">
+                <div class="text-light small">
+                    <i class="fas fa-clock me-1"></i>
+                    <span id="current-time"></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="main-content" id="main-content">
+            <!-- Top Navigation -->
+            <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+                <div class="container-fluid">
+                    <button class="btn btn-outline-light me-3" onclick="toggleSidebar()">
+                        <i class="fas fa-bars"></i>
+                    </button>
+                    <a class="navbar-brand" href="#">
+                        SAP S/4HANA Data Quality Dashboard
+                    </a>
+                    <div class="navbar-nav ms-auto">
+                        <span class="navbar-text">
+                            <i class="fas fa-signal me-1"></i>
+                            <span id="system-status">Online</span>
+                        </span>
+                    </div>
+                </div>
+            </nav>
+
+            <div class="container-fluid mt-4">
+        <!-- Loading Indicator -->
+        <div id="loading" class="loading">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-3">Loading dashboard data...</p>
+        </div>
+
+        <!-- Alert Container -->
+        <div id="alert-container"></div>
+
+        <!-- Overview Metrics -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="card metric-card success-bg">
+                    <div class="metric-value" id="total-validations">-</div>
+                    <div class="metric-label">Total Validations</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card metric-card info-bg">
+                    <div class="metric-value" id="success-rate">-</div>
+                    <div class="metric-label">Success Rate</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card metric-card warning-bg">
+                    <div class="metric-value" id="total-issues">-</div>
+                    <div class="metric-label">Total Issues</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card metric-card danger-bg">
+                    <div class="metric-value" id="failed-validations">-</div>
+                    <div class="metric-label">Failed Validations</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Charts Row -->
+        <div class="row mb-4">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <i class="fas fa-chart-pie me-2"></i>
+                        Validation Status Distribution
+                    </div>
+                    <div class="card-body">
+                        <div style="position: relative; height: 300px; border: 1px solid #ddd; background-color: #f9f9f9;">
+                            <canvas id="statusChart" width="400" height="300" style="display: block; margin: 0 auto;"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <div>
+                            <i class="fas fa-chart-line me-2"></i>
+                            Quality Trends
+                        </div>
+                        <div class="d-flex align-items-center gap-2">
+                            <!-- Date Range Filter -->
+                            <div class="d-flex align-items-center gap-1">
+                                <label for="startDate" class="form-label mb-0 small text-white">From:</label>
+                                <input type="date" id="startDate" class="form-control form-control-sm" style="width: 130px;">
+                            </div>
+                            <div class="d-flex align-items-center gap-1">
+                                <label for="endDate" class="form-label mb-0 small text-white">To:</label>
+                                <input type="date" id="endDate" class="form-control form-control-sm" style="width: 130px;">
+                            </div>
+                            <button id="applyDateRange" class="btn btn-outline-light btn-sm">
+                                <i class="fas fa-filter me-1"></i>Apply
+                            </button>
+                            <button id="resetDateRange" class="btn btn-outline-warning btn-sm">
+                                <i class="fas fa-undo me-1"></i>Reset
+                            </button>
+                            
+                            <!-- Line Toggle Filters -->
+                            <div class="btn-group btn-group-sm ms-2" role="group">
+                                <input type="checkbox" class="btn-check" id="showSuccessRate" checked>
+                                <label class="btn btn-outline-success btn-sm" for="showSuccessRate">
+                                    <i class="fas fa-check-circle me-1"></i>Success Rate
+                                </label>
+                                
+                                <input type="checkbox" class="btn-check" id="showFailedValidations" checked>
+                                <label class="btn btn-outline-danger btn-sm" for="showFailedValidations">
+                                    <i class="fas fa-times-circle me-1"></i>Failed Validations
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div id="trendChart"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Dataset Summary -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <i class="fas fa-table me-2"></i>
+                        Dataset Quality Summary
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-hover" id="dataset-table">
+                                <thead>
+                                    <tr>
+                                        <th>Dataset</th>
+                                        <th>Total Validations</th>
+                                        <th>Passed</th>
+                                        <th>Failed</th>
+                                        <th>Success Rate</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="dataset-tbody">
+                                    <!-- Data will be populated by JavaScript -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent Issues -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <div>
+                            <i class="fas fa-exclamation-triangle me-2"></i>
+                            Recent Issues
+                        </div>
+                        <div class="d-flex align-items-center gap-2">
+                            <div class="d-flex align-items-center gap-1">
+                                <label for="issuesPerPage" class="form-label mb-0 small text-white">Show:</label>
+                                <select id="issuesPerPage" class="form-select form-select-sm" style="width: 80px;">
+                                    <option value="5">5</option>
+                                    <option value="10" selected>10</option>
+                                    <option value="20">20</option>
+                                    <option value="50">50</option>
+                                </select>
+                            </div>
+                            <button class="btn btn-sm btn-outline-light" onclick="refreshIssues()">
+                                <i class="fas fa-sync-alt"></i> Refresh
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-hover" id="issues-table">
+                                <thead>
+                                    <tr>
+                                        <th>Dataset</th>
+                                        <th>Rule</th>
+                                        <th>Status</th>
+                                        <th>Issues Count</th>
+                                        <th>Created</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="issues-tbody">
+                                    <!-- Data will be populated by JavaScript -->
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                        <!-- Pagination Controls -->
+                        <div class="d-flex justify-content-between align-items-center mt-3">
+                            <div class="text-muted small">
+                                Showing <span id="issues-start">0</span> to <span id="issues-end">0</span> of <span id="issues-total">0</span> issues
+                            </div>
+                            <nav aria-label="Issues pagination">
+                                <ul class="pagination pagination-sm mb-0" id="issues-pagination">
+                                    <!-- Pagination will be populated by JavaScript -->
+                                </ul>
+                            </nav>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Rules & Validations Section -->
+        <div class="row mb-4" id="rules-section" style="display: none;">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <div>
+                            <i class="fas fa-shield-alt me-2"></i>
+                            Data Quality Rules & Validations
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-outline-primary btn-sm" onclick="refreshRules()">
+                                <i class="fas fa-sync-alt me-1"></i>Refresh
+                            </button>
+                            <button class="btn btn-outline-success btn-sm" onclick="exportRules()">
+                                <i class="fas fa-download me-1"></i>Export Rules
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <!-- Rules Overview -->
+                        <div class="row mb-4">
+                            <div class="col-md-3">
+                                <div class="card bg-primary text-white">
+                                    <div class="card-body text-center">
+                                        <h4 id="total-rules">-</h4>
+                                        <p class="mb-0">Total Rules</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card bg-success text-white">
+                                    <div class="card-body text-center">
+                                        <h4 id="active-rules">-</h4>
+                                        <p class="mb-0">Active Rules</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card bg-warning text-white">
+                                    <div class="card-body text-center">
+                                        <h4 id="critical-rules">-</h4>
+                                        <p class="mb-0">Critical Rules</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card bg-info text-white">
+                                    <div class="card-body text-center">
+                                        <h4 id="rule-categories">-</h4>
+                                        <p class="mb-0">Categories</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Rules Filter -->
+                        <div class="row mb-3">
+                            <div class="col-md-12">
+                                <div class="d-flex gap-3 align-items-center">
+                                    <div>
+                                        <label for="rule-category-filter" class="form-label">Category:</label>
+                                        <select id="rule-category-filter" class="form-select form-select-sm" style="width: 150px;">
+                                            <option value="">All Categories</option>
+                                            <option value="completeness">Completeness</option>
+                                            <option value="accuracy">Accuracy</option>
+                                            <option value="consistency">Consistency</option>
+                                            <option value="timeliness">Timeliness</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label for="rule-status-filter" class="form-label">Status:</label>
+                                        <select id="rule-status-filter" class="form-select form-select-sm" style="width: 150px;">
+                                            <option value="">All Status</option>
+                                            <option value="active">Active</option>
+                                            <option value="inactive">Inactive</option>
+                                            <option value="critical">Critical</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label for="rule-search" class="form-label">Search:</label>
+                                        <input type="text" id="rule-search" class="form-control form-control-sm" placeholder="Search rules..." style="width: 200px;">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Rules Table -->
+                        <div class="table-responsive">
+                            <table class="table table-striped table-hover" id="rules-table">
+                                <thead class="table-dark">
+                                    <tr>
+                                        <th>Rule Name</th>
+                                        <th>Category</th>
+                                        <th>Description</th>
+                                        <th>Status</th>
+                                        <th>Severity</th>
+                                        <th>Last Run</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="rules-table-body">
+                                    <!-- Rules will be populated here -->
+                                </tbody>
+                            </table>
+                        </div>
+
+                                <!-- Rule Details Modal -->
+        <div class="modal fade" id="ruleModal" tabindex="-1">
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="rule-modal-title">Rule Details</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body" id="rule-modal-body">
+                        <!-- Rule details will be populated here -->
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                        <button type="button" class="btn btn-primary" onclick="editRule()">Edit Rule</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Edit Rule Modal -->
+        <div class="modal fade" id="editRuleModal" tabindex="-1">
+            <div class="modal-dialog modal-xl">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Edit Rule</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <form id="edit-rule-form">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <h6>Basic Information</h6>
+                                    <div class="mb-3">
+                                        <label for="edit-rule-name" class="form-label">Rule Name *</label>
+                                        <input type="text" class="form-control" id="edit-rule-name" required>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="edit-rule-category" class="form-label">Category *</label>
+                                        <select class="form-select" id="edit-rule-category" required>
+                                            <option value="completeness">Completeness</option>
+                                            <option value="accuracy">Accuracy</option>
+                                            <option value="consistency">Consistency</option>
+                                            <option value="timeliness">Timeliness</option>
+                                        </select>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="edit-rule-status" class="form-label">Status *</label>
+                                        <select class="form-select" id="edit-rule-status" required>
+                                            <option value="active">Active</option>
+                                            <option value="inactive">Inactive</option>
+                                            <option value="critical">Critical</option>
+                                        </select>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="edit-rule-severity" class="form-label">Severity *</label>
+                                        <select class="form-select" id="edit-rule-severity" required>
+                                            <option value="low">Low</option>
+                                            <option value="medium">Medium</option>
+                                            <option value="high">High</option>
+                                            <option value="critical">Critical</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <h6>Validation Settings</h6>
+                                    <div class="mb-3">
+                                        <label for="edit-rule-dataset" class="form-label">Dataset *</label>
+                                        <select class="form-select" id="edit-rule-dataset" required>
+                                            <option value="equipment">Equipment</option>
+                                            <option value="functional_locations">Functional Locations</option>
+                                            <option value="maintenance_orders">Maintenance Orders</option>
+                                            <option value="notifications">Notifications</option>
+                                            <option value="maintenance_plans">Maintenance Plans</option>
+                                            <option value="cross_reference">Cross Reference</option>
+                                        </select>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="edit-rule-threshold" class="form-label">Threshold (%) *</label>
+                                        <input type="number" class="form-control" id="edit-rule-threshold" min="0" max="100" required>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="edit-rule-fields" class="form-label">Fields to Validate *</label>
+                                        <div id="edit-rule-fields-container">
+                                            <div class="mb-2">
+                                                <select class="form-select field-select" data-field-index="0">
+                                                    <option value="">Select a field...</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="addFieldSelect()">
+                                            <i class="fas fa-plus me-1"></i>Add Field
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-12">
+                                    <h6>Rule Description & Logic</h6>
+                                    <div class="mb-3">
+                                        <label for="edit-rule-description" class="form-label">Description *</label>
+                                        <textarea class="form-control" id="edit-rule-description" rows="3" required></textarea>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="edit-rule-logic" class="form-label">Validation Logic *</label>
+                                        <textarea class="form-control" id="edit-rule-logic" rows="4" required></textarea>
+                                        <small class="form-text text-muted">Describe the technical logic for this validation rule</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="button" class="btn btn-danger" onclick="deleteRule()">Delete Rule</button>
+                        <button type="button" class="btn btn-primary" onclick="saveRule()">Save Changes</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Risk Register Section -->
+        <div class="row mb-4" id="risks-section" style="display: none;">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <div>
+                            <i class="fas fa-exclamation-triangle me-2"></i>
+                            Data Quality Risk Register
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-outline-primary btn-sm" onclick="refreshRisks()">
+                                <i class="fas fa-sync-alt me-1"></i>Refresh
+                            </button>
+                            <button class="btn btn-outline-success btn-sm" onclick="exportRisks()">
+                                <i class="fas fa-download me-1"></i>Export Risks
+                            </button>
+                            <button class="btn btn-outline-warning btn-sm" onclick="addNewRisk()">
+                                <i class="fas fa-plus me-1"></i>Add Risk
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <!-- Risk Overview -->
+                        <div class="row mb-4">
+                            <div class="col-md-3">
+                                <div class="card bg-danger text-white">
+                                    <div class="card-body text-center">
+                                        <h4 id="high-risks">-</h4>
+                                        <p class="mb-0">High Risks</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card bg-warning text-white">
+                                    <div class="card-body text-center">
+                                        <h4 id="medium-risks">-</h4>
+                                        <p class="mb-0">Medium Risks</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card bg-info text-white">
+                                    <div class="card-body text-center">
+                                        <h4 id="low-risks">-</h4>
+                                        <p class="mb-0">Low Risks</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card bg-success text-white">
+                                    <div class="card-body text-center">
+                                        <h4 id="mitigated-risks">-</h4>
+                                        <p class="mb-0">Mitigated</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Risk Filter -->
+                        <div class="row mb-3">
+                            <div class="col-md-12">
+                                <div class="d-flex gap-3 align-items-center">
+                                    <div>
+                                        <label for="risk-severity-filter" class="form-label">Severity:</label>
+                                        <select id="risk-severity-filter" class="form-select form-select-sm" style="width: 150px;">
+                                            <option value="">All Severities</option>
+                                            <option value="high">High</option>
+                                            <option value="medium">Medium</option>
+                                            <option value="low">Low</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label for="risk-status-filter" class="form-label">Status:</label>
+                                        <select id="risk-status-filter" class="form-select form-select-sm" style="width: 150px;">
+                                            <option value="">All Status</option>
+                                            <option value="open">Open</option>
+                                            <option value="in_progress">In Progress</option>
+                                            <option value="mitigated">Mitigated</option>
+                                            <option value="closed">Closed</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label for="risk-category-filter" class="form-label">Category:</label>
+                                        <select id="risk-category-filter" class="form-select form-select-sm" style="width: 150px;">
+                                            <option value="">All Categories</option>
+                                            <option value="data_integrity">Data Integrity</option>
+                                            <option value="compliance">Compliance</option>
+                                            <option value="operational">Operational</option>
+                                            <option value="financial">Financial</option>
+                                            <option value="reputational">Reputational</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label for="risk-search" class="form-label">Search:</label>
+                                        <input type="text" id="risk-search" class="form-control form-control-sm" placeholder="Search risks..." style="width: 200px;">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Risk Matrix Chart -->
+                        <div class="row mb-4">
+                            <div class="col-md-6">
+                                <div class="card">
+                                    <div class="card-header">
+                                        <i class="fas fa-chart-bar me-2"></i>
+                                        Risk Matrix
+                                    </div>
+                                    <div class="card-body">
+                                        <div style="position: relative; height: 300px;">
+                                            <canvas id="riskMatrixChart" width="400" height="300"></canvas>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="card">
+                                    <div class="card-header">
+                                        <i class="fas fa-chart-pie me-2"></i>
+                                        Risk Distribution
+                                    </div>
+                                    <div class="card-body">
+                                        <div style="position: relative; height: 300px;">
+                                            <canvas id="riskDistributionChart" width="400" height="300"></canvas>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Risks Table -->
+                        <div class="table-responsive">
+                            <table class="table table-striped table-hover" id="risks-table">
+                                <thead class="table-dark">
+                                    <tr>
+                                        <th>Risk ID</th>
+                                        <th>Risk Description</th>
+                                        <th>Category</th>
+                                        <th>Likelihood</th>
+                                        <th>Impact</th>
+                                        <th>Risk Score</th>
+                                        <th>Status</th>
+                                        <th>Owner</th>
+                                        <th>Due Date</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="risks-table-body">
+                                    <!-- Risks will be populated here -->
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Risk Details Modal -->
+                        <div class="modal fade" id="riskModal" tabindex="-1">
+                            <div class="modal-dialog modal-lg">
+                                <div class="modal-content">
+                                    <div class="modal-header">
+                                        <h5 class="modal-title" id="risk-modal-title">Risk Details</h5>
+                                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                    </div>
+                                    <div class="modal-body" id="risk-modal-body">
+                                        <!-- Risk details will be populated here -->
+                                    </div>
+                                    <div class="modal-footer">
+                                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                                        <button type="button" class="btn btn-primary" onclick="editRisk()">Edit Risk</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Add/Edit Risk Modal -->
+                        <div class="modal fade" id="editRiskModal" tabindex="-1">
+                            <div class="modal-dialog modal-xl">
+                                <div class="modal-content">
+                                    <div class="modal-header">
+                                        <h5 class="modal-title" id="edit-risk-modal-title">Add New Risk</h5>
+                                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                    </div>
+                                    <div class="modal-body">
+                                        <form id="edit-risk-form">
+                                            <div class="row">
+                                                <div class="col-md-6">
+                                                    <h6>Risk Information</h6>
+                                                    <div class="mb-3">
+                                                        <label for="edit-risk-title" class="form-label">Risk Title *</label>
+                                                        <input type="text" class="form-control" id="edit-risk-title" required>
+                                                    </div>
+                                                    <div class="mb-3">
+                                                        <label for="edit-risk-category" class="form-label">Category *</label>
+                                                        <select class="form-select" id="edit-risk-category" required>
+                                                            <option value="">Select Category</option>
+                                                            <option value="data_integrity">Data Integrity</option>
+                                                            <option value="compliance">Compliance</option>
+                                                            <option value="operational">Operational</option>
+                                                            <option value="financial">Financial</option>
+                                                            <option value="reputational">Reputational</option>
+                                                        </select>
+                                                    </div>
+                                                    <div class="mb-3">
+                                                        <label for="edit-risk-likelihood" class="form-label">Likelihood *</label>
+                                                        <select class="form-select" id="edit-risk-likelihood" required>
+                                                            <option value="">Select Likelihood</option>
+                                                            <option value="1">1 - Low</option>
+                                                            <option value="2">2 - Medium</option>
+                                                            <option value="3">3 - High</option>
+                                                        </select>
+                                                    </div>
+                                                    <div class="mb-3">
+                                                        <label for="edit-risk-impact" class="form-label">Impact *</label>
+                                                        <select class="form-select" id="edit-risk-impact" required>
+                                                            <option value="">Select Impact</option>
+                                                            <option value="1">1 - Low</option>
+                                                            <option value="2">2 - Medium</option>
+                                                            <option value="3">3 - High</option>
+                                                        </select>
+                                                    </div>
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <h6>Risk Management</h6>
+                                                    <div class="mb-3">
+                                                        <label for="edit-risk-status" class="form-label">Status *</label>
+                                                        <select class="form-select" id="edit-risk-status" required>
+                                                            <option value="open">Open</option>
+                                                            <option value="in_progress">In Progress</option>
+                                                            <option value="mitigated">Mitigated</option>
+                                                            <option value="closed">Closed</option>
+                                                        </select>
+                                                    </div>
+                                                    <div class="mb-3">
+                                                        <label for="edit-risk-owner" class="form-label">Risk Owner *</label>
+                                                        <input type="text" class="form-control" id="edit-risk-owner" required>
+                                                    </div>
+                                                    <div class="mb-3">
+                                                        <label for="edit-risk-due-date" class="form-label">Due Date</label>
+                                                        <input type="date" class="form-control" id="edit-risk-due-date">
+                                                    </div>
+                                                    <div class="mb-3">
+                                                        <label for="edit-risk-priority" class="form-label">Priority</label>
+                                                        <select class="form-select" id="edit-risk-priority">
+                                                            <option value="low">Low</option>
+                                                            <option value="medium">Medium</option>
+                                                            <option value="high">High</option>
+                                                            <option value="critical">Critical</option>
+                                                        </select>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div class="row">
+                                                <div class="col-12">
+                                                    <h6>Risk Details</h6>
+                                                    <div class="mb-3">
+                                                        <label for="edit-risk-description" class="form-label">Risk Description *</label>
+                                                        <textarea class="form-control" id="edit-risk-description" rows="3" required></textarea>
+                                                    </div>
+                                                    <div class="mb-3">
+                                                        <label for="edit-risk-causes" class="form-label">Root Causes</label>
+                                                        <textarea class="form-control" id="edit-risk-causes" rows="2"></textarea>
+                                                    </div>
+                                                    <div class="mb-3">
+                                                        <label for="edit-risk-consequences" class="form-label">Potential Consequences</label>
+                                                        <textarea class="form-control" id="edit-risk-consequences" rows="2"></textarea>
+                                                    </div>
+                                                    <div class="mb-3">
+                                                        <label for="edit-risk-mitigation" class="form-label">Mitigation Strategies</label>
+                                                        <textarea class="form-control" id="edit-risk-mitigation" rows="3"></textarea>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </form>
+                                    </div>
+                                    <div class="modal-footer">
+                                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                        <button type="button" class="btn btn-danger" onclick="deleteRisk()">Delete Risk</button>
+                                        <button type="button" class="btn btn-primary" onclick="saveRisk()">Save Risk</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Export Section -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <i class="fas fa-download me-2"></i>
+                        Export Reports
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-3">
+                                <button class="btn btn-success btn-custom w-100" onclick="exportReport('csv')">
+                                    <i class="fas fa-file-csv me-2"></i>
+                                    Export CSV
+                                </button>
+                            </div>
+                            <div class="col-md-3">
+                                <button class="btn btn-primary btn-custom w-100" onclick="exportReport('excel')">
+                                    <i class="fas fa-file-excel me-2"></i>
+                                    Export Excel
+                                </button>
+                            </div>
+                            <div class="col-md-3">
+                                <button class="btn btn-danger btn-custom w-100" onclick="exportReport('pdf')">
+                                    <i class="fas fa-file-pdf me-2"></i>
+                                    Export PDF
+                                </button>
+                            </div>
+                            <div class="col-md-3">
+                                <button class="btn btn-info btn-custom w-100" onclick="generateQualityReport()">
+                                    <i class="fas fa-chart-bar me-2"></i>
+                                    Quality Report
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal for Issue Details -->
+    <div class="modal fade" id="issueModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Issue Details</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="issue-modal-body">
+                    <!-- Issue details will be populated here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <script>
+        // Global variables
+        let dashboardData = {};
+        let statusChart = null;
+        let trendChart = null;
+
+        // Initialize dashboard
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('DOM loaded');
+            console.log('Chart.js available:', typeof Chart !== 'undefined');
+            if (typeof Chart !== 'undefined') {
+                console.log('Chart.js version:', Chart.version);
+            }
+            updateCurrentTime();
+            setInterval(updateCurrentTime, 1000);
+            loadDashboardData();
+            
+            // Add event listeners for trend chart filters
+            document.getElementById('showSuccessRate').addEventListener('change', updateTrendChartFilters);
+            document.getElementById('showFailedValidations').addEventListener('change', updateTrendChartFilters);
+            
+            // Add event listeners for date range filters
+            document.getElementById('applyDateRange').addEventListener('click', applyDateRangeFilter);
+            document.getElementById('resetDateRange').addEventListener('click', resetDateRangeFilter);
+            
+            // Add event listener for issues per page
+            document.getElementById('issuesPerPage').addEventListener('change', function() {
+                issuesPerPage = parseInt(this.value);
+                currentIssuesPage = 1;
+                if (allIssuesData.length > 0) {
+                    displayIssuesPage();
+                }
+            });
+        });
+
+        function updateCurrentTime() {
+            const now = new Date();
+            document.getElementById('current-time').textContent = now.toLocaleString();
+        }
+
+        function showLoading() {
+            document.getElementById('loading').style.display = 'block';
+        }
+
+        function hideLoading() {
+            document.getElementById('loading').style.display = 'none';
+        }
+
+        function showAlert(message, type = 'info') {
+            const alertContainer = document.getElementById('alert-container');
+            const alertHtml = `
+                <div class="alert alert-${type} alert-dismissible fade show" role="alert">
+                    ${message}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            `;
+            alertContainer.innerHTML = alertHtml;
+        }
+
+        async function loadDashboardData() {
+            console.log('loadDashboardData called');
+            showLoading();
+            try {
+                // Load validation summary
+                const summaryResponse = await fetch('/api/validation-summary?days=30');
+                const summaryData = await summaryResponse.json();
+                
+                console.log('Summary data received:', summaryData);
+                
+                if (summaryData.status === 'success') {
+                    dashboardData.summary = summaryData.data;
+                    updateMetrics(summaryData.data);
+                    updateDatasetTable(summaryData.data);
+                    console.log('About to call createStatusChart');
+                    createStatusChart(summaryData.data);
+                }
+
+                // Load recent issues
+                const issuesResponse = await fetch('/api/recent-issues?limit=20');
+                const issuesData = await issuesResponse.json();
+                
+                if (issuesData.status === 'success') {
+                    dashboardData.issues = issuesData.data;
+                    updateIssuesTable(issuesData.data);
+                }
+
+                // Load quality trends
+                const trendsResponse = await fetch('/api/quality-report?days=30');
+                const trendsData = await trendsResponse.json();
+                
+                if (trendsData.status === 'success') {
+                    dashboardData.trends = trendsData.data;
+                    createTrendChart(trendsData.data.quality_trends);
+                }
+
+            } catch (error) {
+                console.error('Error loading dashboard data:', error);
+                showAlert('Failed to load dashboard data. Please try again.', 'danger');
+            } finally {
+                hideLoading();
+            }
+        }
+
+        function updateMetrics(summary) {
+            let totalValidations = 0;
+            let totalSuccessRate = 0;
+            let totalPassed = 0;
+            let totalFailed = 0;
+            let datasetCount = 0;
+
+            Object.values(summary).forEach(dataset => {
+                totalValidations += dataset.total_validations;
+                totalSuccessRate += dataset.success_rate;
+                datasetCount++;
+                
+                // Calculate passed and failed counts
+                const passedCount = Math.round((dataset.success_rate / 100) * dataset.total_validations);
+                const failedCount = dataset.total_validations - passedCount;
+                totalPassed += passedCount;
+                totalFailed += failedCount;
+            });
+
+            const averageSuccessRate = datasetCount > 0 ? (totalSuccessRate / datasetCount).toFixed(1) : 0;
+
+            document.getElementById('total-validations').textContent = totalValidations.toLocaleString();
+            document.getElementById('success-rate').textContent = averageSuccessRate + '%';
+            document.getElementById('total-issues').textContent = totalFailed.toLocaleString();
+            document.getElementById('failed-validations').textContent = totalFailed.toLocaleString();
+        }
+
+        function updateDatasetTable(summary) {
+            const tbody = document.getElementById('dataset-tbody');
+            tbody.innerHTML = '';
+
+            Object.entries(summary).forEach(([datasetName, dataset]) => {
+                const successRate = dataset.success_rate;
+                const totalValidations = dataset.total_validations;
+                
+                // Calculate passed and failed counts from success rate
+                const passedCount = Math.round((successRate / 100) * totalValidations);
+                const failedCount = totalValidations - passedCount;
+                
+                // Updated quality level thresholds based on your standards
+                let statusClass, statusText;
+                if (successRate >= 90) {
+                    statusClass = 'success';
+                    statusText = 'Excellent';
+                } else if (successRate >= 80) {
+                    statusClass = 'success';
+                    statusText = 'Good';
+                } else if (successRate >= 56) {
+                    statusClass = 'warning';
+                    statusText = 'Fair';
+                } else if (successRate >= 36) {
+                    statusClass = 'warning';
+                    statusText = 'Needs Improving';
+                } else {
+                    statusClass = 'danger';
+                    statusText = 'Poor';
+                }
+
+                const row = `
+                    <tr>
+                        <td><strong>${datasetName}</strong></td>
+                        <td>${totalValidations.toLocaleString()}</td>
+                        <td><span class="badge bg-success">${passedCount.toLocaleString()}</span></td>
+                        <td><span class="badge bg-danger">${failedCount.toLocaleString()}</span></td>
+                        <td>
+                            <div class="progress">
+                                <div class="progress-bar bg-${statusClass}" style="width: ${successRate}%"></div>
+                            </div>
+                            <small>${successRate.toFixed(1)}%</small>
+                        </td>
+                        <td><span class="badge bg-${statusClass}">${statusText}</span></td>
+                    </tr>
+                `;
+                tbody.innerHTML += row;
+            });
+        }
+
+        function updateIssuesTable(issues) {
+            // Store all issues data for pagination
+            allIssuesData = issues;
+            currentIssuesPage = 1;
+            issuesPerPage = parseInt(document.getElementById('issuesPerPage').value);
+            
+            displayIssuesPage();
+        }
+
+        function displayIssuesPage() {
+            const tbody = document.getElementById('issues-tbody');
+            tbody.innerHTML = '';
+
+            const startIndex = (currentIssuesPage - 1) * issuesPerPage;
+            const endIndex = startIndex + issuesPerPage;
+            const pageIssues = allIssuesData.slice(startIndex, endIndex);
+
+            pageIssues.forEach(issue => {
+                const statusClass = issue.status === 'failed' ? 'danger' : 'warning';
+                const issuesCount = issue.issues ? issue.issues.length : 0;
+                const createdDate = new Date(issue.created_at);
+                const formattedDate = createdDate.toLocaleDateString();
+                const formattedTime = createdDate.toLocaleTimeString('en-GB', { 
+                    hour: '2-digit', 
+                    minute: '2-digit',
+                    hour12: false 
+                });
+
+                const row = `
+                    <tr>
+                        <td><strong>${issue.dataset_name}</strong></td>
+                        <td>${issue.rule_name}</td>
+                        <td><span class="badge bg-${statusClass}">${issue.status}</span></td>
+                        <td>${issuesCount}</td>
+                        <td>${formattedDate} ${formattedTime}</td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-primary" onclick="showIssueDetails('${issue.id}')">
+                                <i class="fas fa-eye"></i> Details
+                            </button>
+                        </td>
+                    </tr>
+                `;
+                tbody.innerHTML += row;
+            });
+
+            updatePaginationInfo();
+            updatePaginationControls();
+        }
+
+        function updatePaginationInfo() {
+            const totalIssues = allIssuesData.length;
+            const startIndex = (currentIssuesPage - 1) * issuesPerPage + 1;
+            const endIndex = Math.min(currentIssuesPage * issuesPerPage, totalIssues);
+
+            document.getElementById('issues-start').textContent = totalIssues > 0 ? startIndex : 0;
+            document.getElementById('issues-end').textContent = endIndex;
+            document.getElementById('issues-total').textContent = totalIssues;
+        }
+
+        function updatePaginationControls() {
+            const totalIssues = allIssuesData.length;
+            const totalPages = Math.ceil(totalIssues / issuesPerPage);
+            const pagination = document.getElementById('issues-pagination');
+            
+            pagination.innerHTML = '';
+
+            if (totalPages <= 1) return;
+
+            // Previous button
+            const prevLi = document.createElement('li');
+            prevLi.className = `page-item ${currentIssuesPage === 1 ? 'disabled' : ''}`;
+            prevLi.innerHTML = `
+                <button class="page-link" onclick="changeIssuesPage(${currentIssuesPage - 1})" ${currentIssuesPage === 1 ? 'disabled' : ''}>
+                    <i class="fas fa-chevron-left"></i>
+                </button>
+            `;
+            pagination.appendChild(prevLi);
+
+            // Page numbers
+            const startPage = Math.max(1, currentIssuesPage - 2);
+            const endPage = Math.min(totalPages, currentIssuesPage + 2);
+
+            for (let i = startPage; i <= endPage; i++) {
+                const pageLi = document.createElement('li');
+                pageLi.className = `page-item ${i === currentIssuesPage ? 'active' : ''}`;
+                pageLi.innerHTML = `
+                    <button class="page-link" onclick="changeIssuesPage(${i})">${i}</button>
+                `;
+                pagination.appendChild(pageLi);
+            }
+
+            // Next button
+            const nextLi = document.createElement('li');
+            nextLi.className = `page-item ${currentIssuesPage === totalPages ? 'disabled' : ''}`;
+            nextLi.innerHTML = `
+                <button class="page-link" onclick="changeIssuesPage(${currentIssuesPage + 1})" ${currentIssuesPage === totalPages ? 'disabled' : ''}>
+                    <i class="fas fa-chevron-right"></i>
+                </button>
+            `;
+            pagination.appendChild(nextLi);
+        }
+
+        function changeIssuesPage(page) {
+            const totalPages = Math.ceil(allIssuesData.length / issuesPerPage);
+            if (page < 1 || page > totalPages) return;
+            
+            currentIssuesPage = page;
+            displayIssuesPage();
+        }
+
+        // Sidebar Functions
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const mainContent = document.getElementById('main-content');
+            
+            sidebar.classList.toggle('collapsed');
+            mainContent.classList.toggle('expanded');
+        }
+
+        function showSection(section) {
+            // Remove active class from all nav links
+            document.querySelectorAll('.sidebar-nav .nav-link').forEach(link => {
+                link.classList.remove('active');
+            });
+            
+            // Add active class to clicked link
+            event.target.classList.add('active');
+            
+            // Hide all sections first
+            document.querySelectorAll('.row[id$="-section"]').forEach(el => {
+                el.style.display = 'none';
+            });
+            
+            // Show the selected section
+            switch(section) {
+                case 'dashboard':
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                    break;
+                case 'trends':
+                    document.querySelector('.col-md-6:nth-child(2)').scrollIntoView({ behavior: 'smooth' });
+                    break;
+                case 'issues':
+                    document.querySelector('#issues-table').scrollIntoView({ behavior: 'smooth' });
+                    break;
+                case 'rules':
+                    document.getElementById('rules-section').style.display = 'block';
+                    document.getElementById('rules-section').scrollIntoView({ behavior: 'smooth' });
+                    loadRulesData();
+                    break;
+                case 'risks':
+                    document.getElementById('risks-section').style.display = 'block';
+                    document.getElementById('risks-section').scrollIntoView({ behavior: 'smooth' });
+                    loadRisksData();
+                    break;
+                case 'reports':
+                    document.querySelector('.card-header:contains("Export Reports")').scrollIntoView({ behavior: 'smooth' });
+                    break;
+                case 'settings':
+                    // Future implementation
+                    console.log('Settings section - to be implemented');
+                    break;
+            }
+        }
+
+        function createStatusChart(summary) {
+            console.log('Creating status chart with summary:', summary);
+            
+            // Check if Chart.js is available
+            if (typeof Chart === 'undefined') {
+                console.error('Chart.js is not loaded');
+                return;
+            }
+            
+            const canvas = document.getElementById('statusChart');
+            if (!canvas) {
+                console.error('Canvas element not found');
+                return;
+            }
+            
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+                console.error('Could not get 2D context');
+                return;
+            }
+            
+            if (statusChart) {
+                statusChart.destroy();
+            }
+
+            let totalPassed = 0;
+            let totalFailed = 0;
+
+            Object.values(summary).forEach(dataset => {
+                // Calculate passed and failed counts from success rate (same logic as updateMetrics)
+                const passedCount = Math.round((dataset.success_rate / 100) * dataset.total_validations);
+                const failedCount = dataset.total_validations - passedCount;
+                totalPassed += passedCount;
+                totalFailed += failedCount;
+                console.log(`Dataset: ${dataset.total_validations} total, ${passedCount} passed, ${failedCount} failed`);
+            });
+
+            console.log(`Total: ${totalPassed} passed, ${totalFailed} failed`);
+
+            try {
+                // Test with simple data first
+                const testData = [5, 3]; // Use our calculated values
+                console.log('Creating chart with test data:', testData);
+                
+                statusChart = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['Passed', 'Failed'],
+                        datasets: [{
+                            data: testData,
+                            backgroundColor: ['#27ae60', '#e74c3c'],
+                            borderWidth: 0
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                position: 'bottom'
+                            }
+                        }
+                    }
+                });
+                
+                console.log('Status chart created successfully');
+            } catch (error) {
+                console.error('Error creating chart:', error);
+            }
+        }
+
+        let trendChartData = null;
+        let trendChartLayout = null;
+        let allTrendData = null;
+        
+        // Pagination variables
+        let allIssuesData = [];
+        let currentIssuesPage = 1;
+        let issuesPerPage = 10;
+
+        function createTrendChart(trends) {
+            console.log('Creating trend chart with data:', trends);
+            
+            // Store all data for filtering
+            allTrendData = trends;
+            
+            const trace1 = {
+                x: [],
+                y: [],
+                type: 'scatter',
+                mode: 'lines+markers',
+                name: 'Success Rate',
+                line: {color: '#27ae60'},
+                visible: document.getElementById('showSuccessRate').checked
+            };
+
+            const trace2 = {
+                x: [],
+                y: [],
+                type: 'scatter',
+                mode: 'lines+markers',
+                name: 'Failed Validations',
+                line: {color: '#e74c3c'},
+                visible: document.getElementById('showFailedValidations').checked
+            };
+
+            // Process trends data with date filtering
+            processTrendData(trace1, trace2, trends);
+
+            console.log('Trace1 data:', trace1);
+            console.log('Trace2 data:', trace2);
+
+            const layout = {
+                title: 'Quality Trends',
+                xaxis: {
+                    title: 'Date',
+                    type: 'date',
+                    tickformat: '%Y-%m-%d'
+                },
+                yaxis: {title: 'Percentage (%)'},
+                height: 300
+            };
+
+            // Store data and layout for filter updates
+            trendChartData = [trace1, trace2];
+            trendChartLayout = layout;
+
+            Plotly.newPlot('trendChart', trendChartData, trendChartLayout);
+            
+            // Set default date range (last 30 days)
+            setDefaultDateRange();
+        }
+
+        function processTrendData(trace1, trace2, trends) {
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+            
+            Object.entries(trends).forEach(([dataset, dates]) => {
+                Object.entries(dates).forEach(([date, data]) => {
+                    // Apply date filtering
+                    if (startDate && new Date(date) < new Date(startDate)) return;
+                    if (endDate && new Date(date) > new Date(endDate)) return;
+                    
+                    const successRate = data.total > 0 ? (data.passed / data.total) * 100 : 0;
+                    const failedRate = data.total > 0 ? (data.failed / data.total) * 100 : 0;
+                    
+                    // Convert date string to proper Date object
+                    const dateObj = new Date(date);
+                    console.log(`Processing date: ${date} -> ${dateObj.toISOString()}, success: ${successRate}%, failed: ${failedRate}%`);
+                    
+                    trace1.x.push(dateObj);
+                    trace1.y.push(successRate);
+                    
+                    trace2.x.push(dateObj);
+                    trace2.y.push(failedRate);
+                });
+            });
+        }
+
+        function setDefaultDateRange() {
+            const today = new Date();
+            const thirtyDaysAgo = new Date(today.getTime() - (30 * 24 * 60 * 60 * 1000));
+            
+            document.getElementById('startDate').value = thirtyDaysAgo.toISOString().split('T')[0];
+            document.getElementById('endDate').value = today.toISOString().split('T')[0];
+        }
+
+        function updateTrendChartFilters() {
+            if (!trendChartData || !trendChartLayout) return;
+            
+            const showSuccessRate = document.getElementById('showSuccessRate').checked;
+            const showFailedValidations = document.getElementById('showFailedValidations').checked;
+            
+            // Update visibility of traces
+            const update = {
+                'visible': [showSuccessRate, showFailedValidations]
+            };
+            
+            Plotly.restyle('trendChart', update);
+            
+            // Update legend visibility
+            const layoutUpdate = {
+                'showlegend': showSuccessRate || showFailedValidations
+            };
+            
+            Plotly.relayout('trendChart', layoutUpdate);
+        }
+
+        function applyDateRangeFilter() {
+            if (!allTrendData) return;
+            
+            const trace1 = {
+                x: [],
+                y: [],
+                type: 'scatter',
+                mode: 'lines+markers',
+                name: 'Success Rate',
+                line: {color: '#27ae60'},
+                visible: document.getElementById('showSuccessRate').checked
+            };
+
+            const trace2 = {
+                x: [],
+                y: [],
+                type: 'scatter',
+                mode: 'lines+markers',
+                name: 'Failed Validations',
+                line: {color: '#e74c3c'},
+                visible: document.getElementById('showFailedValidations').checked
+            };
+
+            // Process data with new date range
+            processTrendData(trace1, trace2, allTrendData);
+
+            // Update chart with new data
+            const newData = [trace1, trace2];
+            trendChartData = newData;
+            
+            Plotly.react('trendChart', newData, trendChartLayout);
+            
+            console.log('Date range filter applied');
+        }
+
+        function resetDateRangeFilter() {
+            setDefaultDateRange();
+            applyDateRangeFilter();
+            console.log('Date range filter reset to default');
+        }
+
+        function showIssueDetails(issueId) {
+            const issue = dashboardData.issues.find(i => i.id == issueId);
+            if (!issue) return;
+
+            const modalBody = document.getElementById('issue-modal-body');
+            modalBody.innerHTML = `
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Issue Information</h6>
+                        <p><strong>Dataset:</strong> ${issue.dataset_name}</p>
+                        <p><strong>Rule:</strong> ${issue.rule_name}</p>
+                        <p><strong>Status:</strong> <span class="badge bg-${issue.status === 'failed' ? 'danger' : 'warning'}">${issue.status}</span></p>
+                        <p><strong>Created:</strong> ${new Date(issue.created_at).toLocaleString()}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Metrics</h6>
+                        <pre>${JSON.stringify(issue.metrics, null, 2)}</pre>
+                    </div>
+                </div>
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <h6>Issues Found</h6>
+                        <ul>
+                            ${issue.issues.map(issue => `<li>${JSON.stringify(issue)}</li>`).join('')}
+                        </ul>
+                    </div>
+                </div>
+            `;
+
+            new bootstrap.Modal(document.getElementById('issueModal')).show();
+        }
+
+        function refreshIssues() {
+            loadDashboardData();
+        }
+
+        async function exportReport(format) {
+            try {
+                const response = await fetch(`/api/export/${format}`);
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = response.headers.get('content-disposition')?.split('filename=')[1] || `report.${format}`;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                    showAlert(`Report exported successfully as ${format.toUpperCase()}`, 'success');
+                } else {
+                    throw new Error('Export failed');
+                }
+            } catch (error) {
+                console.error('Export error:', error);
+                showAlert('Failed to export report. Please try again.', 'danger');
+            }
+        }
+
+        async function generateQualityReport() {
+            try {
+                const response = await fetch('/api/quality-report?days=30');
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    showAlert('Quality report generated successfully!', 'success');
+                    // You could open the report in a new window or modal
+                    console.log('Quality Report:', data.data);
+                } else {
+                    throw new Error('Report generation failed');
+                }
+            } catch (error) {
+                console.error('Report generation error:', error);
+                showAlert('Failed to generate quality report. Please try again.', 'danger');
+            }
+        }
+
+        // Auto-refresh every 5 minutes
+        setInterval(loadDashboardData, 300000);
+
+        // Rules & Validations Functions
+        let rulesData = [];
+
+        async function loadRulesData() {
+            try {
+                const response = await fetch('/api/rules');
+                if (response.ok) {
+                    rulesData = await response.json();
+                    updateRulesOverview();
+                    updateRulesTable();
+                    setupRulesFilters();
+                } else {
+                    // If API doesn't exist, use mock data
+                    loadMockRulesData();
+                }
+            } catch (error) {
+                console.log('Rules API not available, using mock data');
+                loadMockRulesData();
+            }
+        }
+
+        function loadMockRulesData() {
+            rulesData = [
+                {
+                    id: 1,
+                    name: 'Equipment Completeness Check',
+                    category: 'completeness',
+                    description: 'Validates that all required equipment fields are populated',
+                    status: 'active',
+                    severity: 'high',
+                    lastRun: new Date().toISOString(),
+                    logic: 'Check if equipment_id, name, location, and status are not null',
+                    threshold: 95,
+                    fields: ['equipment_id', 'name', 'location', 'status'],
+                    dataset: 'equipment'
+                },
+                {
+                    id: 2,
+                    name: 'Equipment Accuracy Validation',
+                    category: 'accuracy',
+                    description: 'Ensures equipment data matches SAP master records',
+                    status: 'active',
+                    severity: 'critical',
+                    lastRun: new Date().toISOString(),
+                    logic: 'Cross-reference with SAP master data for accuracy',
+                    threshold: 98,
+                    fields: ['equipment_id', 'name', 'location'],
+                    dataset: 'equipment'
+                },
+                {
+                    id: 3,
+                    name: 'Maintenance Order Timeliness',
+                    category: 'timeliness',
+                    description: 'Checks if maintenance orders are created within SLA',
+                    status: 'active',
+                    severity: 'medium',
+                    lastRun: new Date().toISOString(),
+                    logic: 'Verify order creation time is within 24 hours of notification',
+                    threshold: 90,
+                    fields: ['order_id', 'created_date', 'notification_date'],
+                    dataset: 'maintenance_orders'
+                },
+                {
+                    id: 4,
+                    name: 'Cross-Reference Consistency',
+                    category: 'consistency',
+                    description: 'Validates referential integrity between datasets',
+                    status: 'active',
+                    severity: 'high',
+                    lastRun: new Date().toISOString(),
+                    logic: 'Check foreign key relationships between equipment and locations',
+                    threshold: 100,
+                    fields: ['equipment_id', 'location_id'],
+                    dataset: 'cross_reference'
+                },
+                {
+                    id: 5,
+                    name: 'Functional Location Validation',
+                    category: 'accuracy',
+                    description: 'Validates functional location hierarchy',
+                    status: 'inactive',
+                    severity: 'medium',
+                    lastRun: new Date(Date.now() - 86400000).toISOString(),
+                    logic: 'Check location hierarchy structure and parent-child relationships',
+                    threshold: 85,
+                    fields: ['location_id', 'parent_location', 'hierarchy_level'],
+                    dataset: 'functional_locations'
+                }
+            ];
+            updateRulesOverview();
+            updateRulesTable();
+            setupRulesFilters();
+        }
+
+        function updateRulesOverview() {
+            const totalRules = rulesData.length;
+            const activeRules = rulesData.filter(r => r.status === 'active').length;
+            const criticalRules = rulesData.filter(r => r.severity === 'critical').length;
+            const categories = new Set(rulesData.map(r => r.category)).size;
+
+            document.getElementById('total-rules').textContent = totalRules;
+            document.getElementById('active-rules').textContent = activeRules;
+            document.getElementById('critical-rules').textContent = criticalRules;
+            document.getElementById('rule-categories').textContent = categories;
+        }
+
+        function updateRulesTable() {
+            const tbody = document.getElementById('rules-table-body');
+            tbody.innerHTML = '';
+
+            rulesData.forEach(rule => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td><strong>${rule.name}</strong></td>
+                    <td><span class="badge bg-${getCategoryColor(rule.category)}">${rule.category}</span></td>
+                    <td>${rule.description}</td>
+                    <td><span class="badge bg-${getStatusColor(rule.status)}">${rule.status}</span></td>
+                    <td><span class="badge bg-${getSeverityColor(rule.severity)}">${rule.severity}</span></td>
+                    <td>${new Date(rule.lastRun).toLocaleString()}</td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-primary" onclick="viewRuleDetails(${rule.id})">
+                            <i class="fas fa-eye"></i>
+                        </button>
+                        <button class="btn btn-sm btn-outline-warning" onclick="toggleRuleStatus(${rule.id})">
+                            <i class="fas fa-toggle-${rule.status === 'active' ? 'on' : 'off'}"></i>
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        function getCategoryColor(category) {
+            const colors = {
+                'completeness': 'primary',
+                'accuracy': 'success',
+                'consistency': 'warning',
+                'timeliness': 'info'
+            };
+            return colors[category] || 'secondary';
+        }
+
+        function getStatusColor(status) {
+            const colors = {
+                'active': 'success',
+                'inactive': 'secondary',
+                'critical': 'danger'
+            };
+            return colors[status] || 'secondary';
+        }
+
+        function getSeverityColor(severity) {
+            const colors = {
+                'low': 'success',
+                'medium': 'warning',
+                'high': 'danger',
+                'critical': 'danger'
+            };
+            return colors[severity] || 'secondary';
+        }
+
+        function setupRulesFilters() {
+            // Category filter
+            document.getElementById('rule-category-filter').addEventListener('change', filterRules);
+            // Status filter
+            document.getElementById('rule-status-filter').addEventListener('change', filterRules);
+            // Search filter
+            document.getElementById('rule-search').addEventListener('input', filterRules);
+            
+            // Dataset change listener for edit form
+            document.getElementById('edit-rule-dataset').addEventListener('change', function() {
+                const dataset = this.value;
+                const fields = datasetFields[dataset] || [];
+                
+                // Update all field selects
+                const fieldSelects = document.querySelectorAll('.field-select');
+                fieldSelects.forEach(select => {
+                    const currentValue = select.value;
+                    select.innerHTML = '<option value="">Select a field...</option>' + 
+                        fields.map(f => `<option value="${f}" ${f === currentValue ? 'selected' : ''}>${f}</option>`).join('');
+                });
+            });
+        }
+
+        function filterRules() {
+            const categoryFilter = document.getElementById('rule-category-filter').value;
+            const statusFilter = document.getElementById('rule-status-filter').value;
+            const searchFilter = document.getElementById('rule-search').value.toLowerCase();
+
+            const filteredRules = rulesData.filter(rule => {
+                const matchesCategory = !categoryFilter || rule.category === categoryFilter;
+                const matchesStatus = !statusFilter || rule.status === statusFilter;
+                const matchesSearch = !searchFilter || 
+                    rule.name.toLowerCase().includes(searchFilter) ||
+                    rule.description.toLowerCase().includes(searchFilter);
+
+                return matchesCategory && matchesStatus && matchesSearch;
+            });
+
+            updateRulesTableWithData(filteredRules);
+        }
+
+        function updateRulesTableWithData(rules) {
+            const tbody = document.getElementById('rules-table-body');
+            tbody.innerHTML = '';
+
+            rules.forEach(rule => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td><strong>${rule.name}</strong></td>
+                    <td><span class="badge bg-${getCategoryColor(rule.category)}">${rule.category}</span></td>
+                    <td>${rule.description}</td>
+                    <td><span class="badge bg-${getStatusColor(rule.status)}">${rule.status}</span></td>
+                    <td><span class="badge bg-${getSeverityColor(rule.severity)}">${rule.severity}</span></td>
+                    <td>${new Date(rule.lastRun).toLocaleString()}</td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-primary" onclick="viewRuleDetails(${rule.id})">
+                            <i class="fas fa-eye"></i>
+                        </button>
+                        <button class="btn btn-sm btn-outline-warning" onclick="toggleRuleStatus(${rule.id})">
+                            <i class="fas fa-toggle-${rule.status === 'active' ? 'on' : 'off'}"></i>
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        function viewRuleDetails(ruleId) {
+            const rule = rulesData.find(r => r.id === ruleId);
+            if (!rule) return;
+
+            // Set the current editing rule
+            currentEditingRule = rule;
+
+            document.getElementById('rule-modal-title').textContent = rule.name;
+            document.getElementById('rule-modal-body').innerHTML = `
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Rule Information</h6>
+                        <p><strong>Category:</strong> <span class="badge bg-${getCategoryColor(rule.category)}">${rule.category}</span></p>
+                        <p><strong>Status:</strong> <span class="badge bg-${getStatusColor(rule.status)}">${rule.status}</span></p>
+                        <p><strong>Severity:</strong> <span class="badge bg-${getSeverityColor(rule.severity)}">${rule.severity}</span></p>
+                        <p><strong>Threshold:</strong> ${rule.threshold}%</p>
+                        <p><strong>Dataset:</strong> ${rule.dataset}</p>
+                        <p><strong>Last Run:</strong> ${new Date(rule.lastRun).toLocaleString()}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Validation Logic</h6>
+                        <div class="alert alert-info">
+                            <strong>Logic:</strong> ${rule.logic}
+                        </div>
+                        <h6>Fields Validated</h6>
+                        <ul>
+                            ${rule.fields.map(field => `<li><code>${field}</code></li>`).join('')}
+                        </ul>
+                    </div>
+                </div>
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <h6>Description</h6>
+                        <p>${rule.description}</p>
+                    </div>
+                </div>
+            `;
+
+            new bootstrap.Modal(document.getElementById('ruleModal')).show();
+        }
+
+        function toggleRuleStatus(ruleId) {
+            const rule = rulesData.find(r => r.id === ruleId);
+            if (!rule) return;
+
+            rule.status = rule.status === 'active' ? 'inactive' : 'active';
+            updateRulesOverview();
+            updateRulesTable();
+            
+            showAlert(`Rule "${rule.name}" ${rule.status === 'active' ? 'activated' : 'deactivated'}`, 'success');
+        }
+
+        function refreshRules() {
+            loadRulesData();
+            showAlert('Rules data refreshed', 'info');
+        }
+
+        function exportRules() {
+            const rulesJson = JSON.stringify(rulesData, null, 2);
+            const blob = new Blob([rulesJson], { type: 'application/json' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'data-quality-rules.json';
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+            showAlert('Rules exported successfully', 'success');
+        }
+
+        // Field options for different datasets
+        const datasetFields = {
+            'equipment': ['equipment_id', 'name', 'location', 'status', 'manufacturer', 'model', 'serial_number', 'installation_date', 'last_maintenance', 'next_maintenance'],
+            'functional_locations': ['location_id', 'name', 'parent_location', 'hierarchy_level', 'description', 'status', 'responsible_person'],
+            'maintenance_orders': ['order_id', 'equipment_id', 'order_type', 'priority', 'status', 'created_date', 'planned_start', 'planned_end', 'actual_start', 'actual_end'],
+            'notifications': ['notification_id', 'equipment_id', 'notification_type', 'priority', 'status', 'created_date', 'short_text', 'long_text'],
+            'maintenance_plans': ['plan_id', 'equipment_id', 'plan_type', 'frequency', 'status', 'created_date', 'last_execution', 'next_execution'],
+            'cross_reference': ['equipment_id', 'location_id', 'order_id', 'notification_id', 'plan_id']
+        };
+
+        let currentEditingRule = null;
+
+        function editRule() {
+            if (!currentEditingRule) {
+                showAlert('No rule selected for editing', 'warning');
+                return;
+            }
+
+            // Populate the edit form with current rule data
+            document.getElementById('edit-rule-name').value = currentEditingRule.name;
+            document.getElementById('edit-rule-category').value = currentEditingRule.category;
+            document.getElementById('edit-rule-status').value = currentEditingRule.status;
+            document.getElementById('edit-rule-severity').value = currentEditingRule.severity;
+            document.getElementById('edit-rule-dataset').value = currentEditingRule.dataset;
+            document.getElementById('edit-rule-threshold').value = currentEditingRule.threshold;
+            document.getElementById('edit-rule-description').value = currentEditingRule.description;
+            document.getElementById('edit-rule-logic').value = currentEditingRule.logic;
+
+            // Populate fields
+            populateFieldSelects(currentEditingRule.dataset, currentEditingRule.fields);
+
+            // Close the details modal and open the edit modal
+            bootstrap.Modal.getInstance(document.getElementById('ruleModal')).hide();
+            new bootstrap.Modal(document.getElementById('editRuleModal')).show();
+        }
+
+        function populateFieldSelects(dataset, selectedFields) {
+            const container = document.getElementById('edit-rule-fields-container');
+            container.innerHTML = '';
+
+            const fields = datasetFields[dataset] || [];
+            
+            selectedFields.forEach((field, index) => {
+                const fieldDiv = document.createElement('div');
+                fieldDiv.className = 'mb-2 d-flex align-items-center';
+                fieldDiv.innerHTML = `
+                    <select class="form-select field-select me-2" data-field-index="${index}">
+                        <option value="">Select a field...</option>
+                        ${fields.map(f => `<option value="${f}" ${selectedFields.includes(f) ? 'selected' : ''}>${f}</option>`).join('')}
+                    </select>
+                    <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeFieldSelect(this)">
+                        <i class="fas fa-times"></i>
+                    </button>
+                `;
+                container.appendChild(fieldDiv);
+            });
+        }
+
+        function addFieldSelect() {
+            const container = document.getElementById('edit-rule-fields-container');
+            const dataset = document.getElementById('edit-rule-dataset').value;
+            const fields = datasetFields[dataset] || [];
+            const fieldIndex = container.children.length;
+
+            const fieldDiv = document.createElement('div');
+            fieldDiv.className = 'mb-2 d-flex align-items-center';
+            fieldDiv.innerHTML = `
+                <select class="form-select field-select me-2" data-field-index="${fieldIndex}">
+                    <option value="">Select a field...</option>
+                    ${fields.map(f => `<option value="${f}">${f}</option>`).join('')}
+                </select>
+                <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeFieldSelect(this)">
+                    <i class="fas fa-times"></i>
+                </button>
+            `;
+            container.appendChild(fieldDiv);
+        }
+
+        function removeFieldSelect(button) {
+            button.parentElement.remove();
+        }
+
+        function saveRule() {
+            // Validate form
+            const form = document.getElementById('edit-rule-form');
+            if (!form.checkValidity()) {
+                form.reportValidity();
+                return;
+            }
+
+            // Collect form data
+            const updatedRule = {
+                id: currentEditingRule.id,
+                name: document.getElementById('edit-rule-name').value,
+                category: document.getElementById('edit-rule-category').value,
+                status: document.getElementById('edit-rule-status').value,
+                severity: document.getElementById('edit-rule-severity').value,
+                dataset: document.getElementById('edit-rule-dataset').value,
+                threshold: parseInt(document.getElementById('edit-rule-threshold').value),
+                description: document.getElementById('edit-rule-description').value,
+                logic: document.getElementById('edit-rule-logic').value,
+                fields: Array.from(document.querySelectorAll('.field-select')).map(select => select.value).filter(field => field),
+                lastRun: currentEditingRule.lastRun
+            };
+
+            // Validate that at least one field is selected
+            if (updatedRule.fields.length === 0) {
+                showAlert('Please select at least one field to validate', 'warning');
+                return;
+            }
+
+            // Update the rule in the data
+            const ruleIndex = rulesData.findIndex(r => r.id === currentEditingRule.id);
+            if (ruleIndex !== -1) {
+                rulesData[ruleIndex] = updatedRule;
+                
+                // Update the UI
+                updateRulesOverview();
+                updateRulesTable();
+                
+                // Close modal and show success message
+                bootstrap.Modal.getInstance(document.getElementById('editRuleModal')).hide();
+                showAlert(`Rule "${updatedRule.name}" updated successfully`, 'success');
+                
+                // Reset current editing rule
+                currentEditingRule = null;
+            }
+        }
+
+        function deleteRule() {
+            if (!currentEditingRule) return;
+
+            if (confirm(`Are you sure you want to delete the rule "${currentEditingRule.name}"?`)) {
+                // Remove the rule from data
+                rulesData = rulesData.filter(r => r.id !== currentEditingRule.id);
+                
+                // Update the UI
+                updateRulesOverview();
+                updateRulesTable();
+                
+                // Close modal and show success message
+                bootstrap.Modal.getInstance(document.getElementById('editRuleModal')).hide();
+                showAlert(`Rule "${currentEditingRule.name}" deleted successfully`, 'success');
+                
+                // Reset current editing rule
+                currentEditingRule = null;
+            }
+        }
+
+        // Risk Register Functions
+        let risksData = [];
+        let currentEditingRisk = null;
+        let riskMatrixChart = null;
+        let riskDistributionChart = null;
+
+        async function loadRisksData() {
+            try {
+                const response = await fetch('/api/risks');
+                if (response.ok) {
+                    risksData = await response.json();
+                    updateRisksOverview();
+                    updateRisksTable();
+                    setupRisksFilters();
+                    createRiskCharts();
+                } else {
+                    // If API doesn't exist, use mock data
+                    loadMockRisksData();
+                }
+            } catch (error) {
+                console.log('Risks API not available, using mock data');
+                loadMockRisksData();
+            }
+        }
+
+        function loadMockRisksData() {
+            risksData = [
+                {
+                    id: 1,
+                    title: 'Data Integrity Loss',
+                    description: 'Risk of data corruption or loss during SAP S/4HANA migration',
+                    category: 'data_integrity',
+                    likelihood: 3,
+                    impact: 3,
+                    riskScore: 9,
+                    status: 'open',
+                    owner: 'Data Quality Team',
+                    dueDate: '2024-03-15',
+                    priority: 'high',
+                    causes: 'Complex data transformation processes, lack of validation rules',
+                    consequences: 'Financial reporting errors, compliance violations, operational disruptions',
+                    mitigation: 'Implement comprehensive data validation rules, establish data quality monitoring, create rollback procedures'
+                },
+                {
+                    id: 2,
+                    title: 'Compliance Violations',
+                    description: 'Risk of non-compliance with regulatory requirements due to poor data quality',
+                    category: 'compliance',
+                    likelihood: 3,
+                    impact: 3,
+                    riskScore: 9,
+                    status: 'in_progress',
+                    owner: 'Compliance Officer',
+                    dueDate: '2024-02-28',
+                    priority: 'critical',
+                    causes: 'Incomplete data validation, missing audit trails, inadequate documentation',
+                    consequences: 'Regulatory fines, legal action, reputational damage',
+                    mitigation: 'Implement automated compliance checks, establish audit logging, regular compliance reviews'
+                },
+                {
+                    id: 3,
+                    title: 'Operational Disruptions',
+                    description: 'Risk of system downtime due to data quality issues',
+                    category: 'operational',
+                    likelihood: 2,
+                    impact: 3,
+                    riskScore: 6,
+                    status: 'open',
+                    owner: 'IT Operations',
+                    dueDate: '2024-04-10',
+                    priority: 'medium',
+                    causes: 'Data synchronization failures, validation rule conflicts, performance issues',
+                    consequences: 'System downtime, user access issues, productivity loss',
+                    mitigation: 'Implement robust error handling, performance monitoring, automated recovery procedures'
+                },
+                {
+                    id: 4,
+                    title: 'Financial Reporting Errors',
+                    description: 'Risk of inaccurate financial reports due to data quality issues',
+                    category: 'financial',
+                    likelihood: 3,
+                    impact: 3,
+                    riskScore: 9,
+                    status: 'mitigated',
+                    owner: 'Finance Team',
+                    dueDate: '2024-01-20',
+                    priority: 'high',
+                    causes: 'Data validation gaps, calculation errors, missing financial data',
+                    consequences: 'Incorrect financial statements, audit failures, investor confidence loss',
+                    mitigation: 'Implement financial data validation rules, automated reconciliation, regular audits'
+                },
+                {
+                    id: 5,
+                    title: 'Reputational Damage',
+                    description: 'Risk of damage to company reputation due to data quality failures',
+                    category: 'reputational',
+                    likelihood: 2,
+                    impact: 3,
+                    riskScore: 6,
+                    status: 'open',
+                    owner: 'Corporate Communications',
+                    dueDate: '2024-05-01',
+                    priority: 'medium',
+                    causes: 'Public data quality issues, customer data breaches, media exposure',
+                    consequences: 'Customer trust loss, brand damage, competitive disadvantage',
+                    mitigation: 'Implement data privacy controls, customer communication protocols, crisis management plan'
+                }
+            ];
+            updateRisksOverview();
+            updateRisksTable();
+            setupRisksFilters();
+            createRiskCharts();
+        }
+
+        function updateRisksOverview() {
+            const highRisks = risksData.filter(r => r.riskScore >= 7).length;
+            const mediumRisks = risksData.filter(r => r.riskScore >= 4 && r.riskScore < 7).length;
+            const lowRisks = risksData.filter(r => r.riskScore < 4).length;
+            const mitigatedRisks = risksData.filter(r => r.status === 'mitigated').length;
+
+            document.getElementById('high-risks').textContent = highRisks;
+            document.getElementById('medium-risks').textContent = mediumRisks;
+            document.getElementById('low-risks').textContent = lowRisks;
+            document.getElementById('mitigated-risks').textContent = mitigatedRisks;
+        }
+
+        function updateRisksTable() {
+            const tbody = document.getElementById('risks-table-body');
+            tbody.innerHTML = '';
+
+            risksData.forEach(risk => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td><strong>R${risk.id.toString().padStart(3, '0')}</strong></td>
+                    <td><strong>${risk.title}</strong><br><small>${risk.description}</small></td>
+                    <td><span class="badge bg-${getRiskCategoryColor(risk.category)}">${risk.category.replace('_', ' ')}</span></td>
+                    <td><span class="badge bg-${getLikelihoodColor(risk.likelihood)}">${risk.likelihood}/5</span></td>
+                    <td><span class="badge bg-${getImpactColor(risk.impact)}">${risk.impact}/5</span></td>
+                    <td><span class="badge bg-${getRiskScoreColor(risk.riskScore)}">${risk.riskScore}</span></td>
+                    <td><span class="badge bg-${getRiskStatusColor(risk.status)}">${risk.status.replace('_', ' ')}</span></td>
+                    <td>${risk.owner}</td>
+                    <td>${risk.dueDate ? new Date(risk.dueDate).toLocaleDateString() : '-'}</td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-primary" onclick="viewRiskDetails(${risk.id})">
+                            <i class="fas fa-eye"></i>
+                        </button>
+                        <button class="btn btn-sm btn-outline-warning" onclick="editRisk(${risk.id})">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        function getRiskCategoryColor(category) {
+            const colors = {
+                'data_integrity': 'primary',
+                'compliance': 'danger',
+                'operational': 'warning',
+                'financial': 'success',
+                'reputational': 'info'
+            };
+            return colors[category] || 'secondary';
+        }
+
+        function getLikelihoodColor(likelihood) {
+            if (likelihood >= 3) return 'danger';
+            if (likelihood >= 2) return 'warning';
+            return 'success';
+        }
+
+        function getImpactColor(impact) {
+            if (impact >= 3) return 'danger';
+            if (impact >= 2) return 'warning';
+            return 'success';
+        }
+
+        function getRiskScoreColor(score) {
+            if (score >= 7) return 'danger';
+            if (score >= 4) return 'warning';
+            return 'success';
+        }
+
+        function getRiskStatusColor(status) {
+            const colors = {
+                'open': 'danger',
+                'in_progress': 'warning',
+                'mitigated': 'success',
+                'closed': 'secondary'
+            };
+            return colors[status] || 'secondary';
+        }
+
+        function setupRisksFilters() {
+            // Severity filter
+            document.getElementById('risk-severity-filter').addEventListener('change', filterRisks);
+            // Status filter
+            document.getElementById('risk-status-filter').addEventListener('change', filterRisks);
+            // Category filter
+            document.getElementById('risk-category-filter').addEventListener('change', filterRisks);
+            // Search filter
+            document.getElementById('risk-search').addEventListener('input', filterRisks);
+        }
+
+        function filterRisks() {
+            const severityFilter = document.getElementById('risk-severity-filter').value;
+            const statusFilter = document.getElementById('risk-status-filter').value;
+            const categoryFilter = document.getElementById('risk-category-filter').value;
+            const searchFilter = document.getElementById('risk-search').value.toLowerCase();
+
+            const filteredRisks = risksData.filter(risk => {
+                const matchesSeverity = !severityFilter || 
+                    (severityFilter === 'high' && risk.riskScore >= 7) ||
+                    (severityFilter === 'medium' && risk.riskScore >= 4 && risk.riskScore < 7) ||
+                    (severityFilter === 'low' && risk.riskScore < 4);
+                const matchesStatus = !statusFilter || risk.status === statusFilter;
+                const matchesCategory = !categoryFilter || risk.category === categoryFilter;
+                const matchesSearch = !searchFilter || 
+                    risk.title.toLowerCase().includes(searchFilter) ||
+                    risk.description.toLowerCase().includes(searchFilter) ||
+                    risk.owner.toLowerCase().includes(searchFilter);
+
+                return matchesSeverity && matchesStatus && matchesCategory && matchesSearch;
+            });
+
+            updateRisksTableWithData(filteredRisks);
+        }
+
+        function updateRisksTableWithData(risks) {
+            const tbody = document.getElementById('risks-table-body');
+            tbody.innerHTML = '';
+
+            risks.forEach(risk => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td><strong>R${risk.id.toString().padStart(3, '0')}</strong></td>
+                    <td><strong>${risk.title}</strong><br><small>${risk.description}</small></td>
+                    <td><span class="badge bg-${getRiskCategoryColor(risk.category)}">${risk.category.replace('_', ' ')}</span></td>
+                    <td><span class="badge bg-${getLikelihoodColor(risk.likelihood)}">${risk.likelihood}/5</span></td>
+                    <td><span class="badge bg-${getImpactColor(risk.impact)}">${risk.impact}/5</span></td>
+                    <td><span class="badge bg-${getRiskScoreColor(risk.riskScore)}">${risk.riskScore}</span></td>
+                    <td><span class="badge bg-${getRiskStatusColor(risk.status)}">${risk.status.replace('_', ' ')}</span></td>
+                    <td>${risk.owner}</td>
+                    <td>${risk.dueDate ? new Date(risk.dueDate).toLocaleDateString() : '-'}</td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-primary" onclick="viewRiskDetails(${risk.id})">
+                            <i class="fas fa-eye"></i>
+                        </button>
+                        <button class="btn btn-sm btn-outline-warning" onclick="editRisk(${risk.id})">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        function createRiskCharts() {
+            createRiskMatrixChart();
+            // Add a small delay to ensure canvas is ready
+            setTimeout(() => {
+                createRiskDistributionChart();
+            }, 100);
+        }
+
+        function createRiskMatrixChart() {
+            const ctx = document.getElementById('riskMatrixChart');
+            if (!ctx) {
+                console.log('Risk matrix chart canvas not found');
+                return;
+            }
+
+            // Destroy existing chart if it exists
+            if (riskMatrixChart) {
+                riskMatrixChart.destroy();
+            }
+
+            console.log('Creating risk matrix chart...');
+            console.log('Risks data:', risksData);
+
+            if (!risksData || risksData.length === 0) {
+                console.log('No risk data available for matrix chart');
+                return;
+            }
+
+            try {
+                riskMatrixChart = new Chart(ctx, {
+                    type: 'scatter',
+                    data: {
+                        datasets: risksData.map(risk => ({
+                            label: risk.title,
+                            data: [{
+                                x: risk.likelihood,
+                                y: risk.impact
+                            }],
+                            backgroundColor: getRiskScoreColor(risk.riskScore) === 'danger' ? 'rgba(255, 0, 0, 0.7)' :
+                                           getRiskScoreColor(risk.riskScore) === 'warning' ? 'rgba(255, 165, 0, 0.7)' :
+                                           'rgba(0, 255, 0, 0.7)',
+                            borderColor: getRiskScoreColor(risk.riskScore) === 'danger' ? 'rgba(255, 0, 0, 1)' :
+                                        getRiskScoreColor(risk.riskScore) === 'warning' ? 'rgba(255, 165, 0, 1)' :
+                                        'rgba(0, 255, 0, 1)',
+                            borderWidth: 2,
+                            pointRadius: 8
+                        }))
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            x: {
+                                title: {
+                                    display: true,
+                                    text: 'Likelihood'
+                                },
+                                min: 0.5,
+                                max: 3.5,
+                                ticks: {
+                                    stepSize: 1,
+                                    callback: function(value) {
+                                        if (value === 1) return '1 - Low';
+                                        if (value === 2) return '2 - Medium';
+                                        if (value === 3) return '3 - High';
+                                        return '';
+                                    }
+                                }
+                            },
+                            y: {
+                                title: {
+                                    display: true,
+                                    text: 'Impact'
+                                },
+                                min: 0.5,
+                                max: 3.5,
+                                ticks: {
+                                    stepSize: 1,
+                                    callback: function(value) {
+                                        if (value === 1) return '1 - Low';
+                                        if (value === 2) return '2 - Medium';
+                                        if (value === 3) return '3 - High';
+                                        return '';
+                                    }
+                                }
+                            }
+                        },
+                        plugins: {
+                            title: {
+                                display: true,
+                                text: 'Risk Matrix (Likelihood vs Impact)'
+                            },
+                            legend: {
+                                display: true,
+                                position: 'bottom'
+                            }
+                        }
+                    }
+                });
+
+                console.log('Risk matrix chart created successfully');
+                return riskMatrixChart;
+            } catch (error) {
+                console.error('Error creating risk matrix chart:', error);
+            }
+        }
+
+        function createRiskDistributionChart() {
+            const ctx = document.getElementById('riskDistributionChart');
+            if (!ctx) {
+                console.log('Risk distribution chart canvas not found');
+                return;
+            }
+
+            // Destroy existing chart if it exists
+            if (riskDistributionChart) {
+                riskDistributionChart.destroy();
+            }
+
+            console.log('Creating risk distribution chart...');
+            console.log('Chart.js available:', typeof Chart !== 'undefined');
+            console.log('Canvas element:', ctx);
+            console.log('Canvas context:', ctx.getContext('2d'));
+
+            const categories = ['Data Integrity', 'Compliance', 'Operational', 'Financial', 'Reputational'];
+            const categoryCounts = categories.map(cat => {
+                const categoryKey = cat.toLowerCase().replace(' ', '_');
+                return risksData.filter(r => r.category === categoryKey).length;
+            });
+
+            console.log('Categories:', categories);
+            console.log('Category counts:', categoryCounts);
+            console.log('Total count:', categoryCounts.reduce((sum, count) => sum + count, 0));
+
+            // Check if we have any data to display
+            const totalCount = categoryCounts.reduce((sum, count) => sum + count, 0);
+            if (totalCount === 0) {
+                console.log('No risk data available for chart');
+                return;
+            }
+
+            // Force canvas to be visible and properly sized
+            ctx.style.display = 'block';
+            ctx.width = ctx.offsetWidth;
+            ctx.height = ctx.offsetHeight;
+
+            try {
+                console.log('Attempting to create doughnut chart with data:', {
+                    labels: categories,
+                    data: categoryCounts
+                });
+                
+                // Simplify to match the working status chart approach
+                riskDistributionChart = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: categories,
+                        datasets: [{
+                            data: categoryCounts,
+                            backgroundColor: [
+                                '#3498db',
+                                '#e74c3c',
+                                '#f39c12',
+                                '#27ae60',
+                                '#9b59b6'
+                            ],
+                            borderWidth: 0
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                position: 'bottom'
+                            }
+                        }
+                    }
+                });
+
+                console.log('Risk distribution chart created successfully');
+                return riskDistributionChart;
+            } catch (error) {
+                console.error('Error creating risk distribution chart:', error);
+                console.log('Trying with bar chart as fallback...');
+                
+                // Try with a bar chart as fallback
+                try {
+                    riskDistributionChart = new Chart(ctx, {
+                        type: 'bar',
+                        data: {
+                            labels: categories,
+                            datasets: [{
+                                label: 'Risk Count',
+                                data: categoryCounts,
+                                backgroundColor: [
+                                    'rgba(54, 162, 235, 0.8)',
+                                    'rgba(255, 99, 132, 0.8)',
+                                    'rgba(255, 205, 86, 0.8)',
+                                    'rgba(75, 192, 192, 0.8)',
+                                    'rgba(153, 102, 255, 0.8)'
+                                ],
+                                borderColor: [
+                                    'rgba(54, 162, 235, 1)',
+                                    'rgba(255, 99, 132, 1)',
+                                    'rgba(255, 205, 86, 1)',
+                                    'rgba(75, 192, 192, 1)',
+                                    'rgba(153, 102, 255, 1)'
+                                ],
+                                borderWidth: 1
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                title: {
+                                    display: true,
+                                    text: 'Risk Distribution by Category'
+                                },
+                                legend: {
+                                    display: false
+                                }
+                            },
+                            scales: {
+                                y: {
+                                    beginAtZero: true,
+                                    ticks: {
+                                        stepSize: 1
+                                    }
+                                }
+                            }
+                        }
+                    });
+                    console.log('Bar chart fallback created successfully');
+                    return riskDistributionChart;
+                } catch (fallbackError) {
+                    console.error('Error creating bar chart fallback:', fallbackError);
+                }
+                
+                // Try again after a longer delay
+                setTimeout(() => {
+                    console.log('Retrying risk distribution chart creation...');
+                    createRiskDistributionChart();
+                }, 500);
+            }
+        }
+
+        function viewRiskDetails(riskId) {
+            const risk = risksData.find(r => r.id === riskId);
+            if (!risk) return;
+
+            currentEditingRisk = risk;
+
+            document.getElementById('risk-modal-title').textContent = risk.title;
+            document.getElementById('risk-modal-body').innerHTML = `
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Risk Information</h6>
+                        <p><strong>Category:</strong> <span class="badge bg-${getRiskCategoryColor(risk.category)}">${risk.category.replace('_', ' ')}</span></p>
+                        <p><strong>Status:</strong> <span class="badge bg-${getRiskStatusColor(risk.status)}">${risk.status.replace('_', ' ')}</span></p>
+                        <p><strong>Priority:</strong> <span class="badge bg-${getRiskScoreColor(risk.riskScore)}">${risk.priority}</span></p>
+                        <p><strong>Risk Score:</strong> <span class="badge bg-${getRiskScoreColor(risk.riskScore)}">${risk.riskScore}</span></p>
+                        <p><strong>Likelihood:</strong> <span class="badge bg-${getLikelihoodColor(risk.likelihood)}">${risk.likelihood}/5</span></p>
+                        <p><strong>Impact:</strong> <span class="badge bg-${getImpactColor(risk.impact)}">${risk.impact}/5</span></p>
+                        <p><strong>Owner:</strong> ${risk.owner}</p>
+                        <p><strong>Due Date:</strong> ${risk.dueDate ? new Date(risk.dueDate).toLocaleDateString() : 'Not set'}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Risk Assessment</h6>
+                        <div class="alert alert-info">
+                            <strong>Description:</strong> ${risk.description}
+                        </div>
+                        <h6>Root Causes</h6>
+                        <p>${risk.causes || 'Not specified'}</p>
+                        <h6>Potential Consequences</h6>
+                        <p>${risk.consequences || 'Not specified'}</p>
+                    </div>
+                </div>
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <h6>Mitigation Strategies</h6>
+                        <div class="alert alert-success">
+                            ${risk.mitigation || 'No mitigation strategies defined'}
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            new bootstrap.Modal(document.getElementById('riskModal')).show();
+        }
+
+        function addNewRisk() {
+            currentEditingRisk = null;
+            document.getElementById('edit-risk-modal-title').textContent = 'Add New Risk';
+            document.getElementById('edit-risk-form').reset();
+            new bootstrap.Modal(document.getElementById('editRiskModal')).show();
+        }
+
+        function editRisk(riskId) {
+            const risk = risksData.find(r => r.id === riskId);
+            if (!risk) {
+                addNewRisk();
+                return;
+            }
+
+            currentEditingRisk = risk;
+            document.getElementById('edit-risk-modal-title').textContent = 'Edit Risk';
+            
+            // Populate form with risk data
+            document.getElementById('edit-risk-title').value = risk.title;
+            document.getElementById('edit-risk-category').value = risk.category;
+            document.getElementById('edit-risk-likelihood').value = risk.likelihood;
+            document.getElementById('edit-risk-impact').value = risk.impact;
+            document.getElementById('edit-risk-status').value = risk.status;
+            document.getElementById('edit-risk-owner').value = risk.owner;
+            document.getElementById('edit-risk-due-date').value = risk.dueDate || '';
+            document.getElementById('edit-risk-priority').value = risk.priority;
+            document.getElementById('edit-risk-description').value = risk.description;
+            document.getElementById('edit-risk-causes').value = risk.causes || '';
+            document.getElementById('edit-risk-consequences').value = risk.consequences || '';
+            document.getElementById('edit-risk-mitigation').value = risk.mitigation || '';
+
+            // Close details modal if open
+            const detailsModal = bootstrap.Modal.getInstance(document.getElementById('riskModal'));
+            if (detailsModal) {
+                detailsModal.hide();
+            }
+
+            new bootstrap.Modal(document.getElementById('editRiskModal')).show();
+        }
+
+        function saveRisk() {
+            // Validate form
+            const form = document.getElementById('edit-risk-form');
+            if (!form.checkValidity()) {
+                form.reportValidity();
+                return;
+            }
+
+            // Calculate risk score
+            const likelihood = parseInt(document.getElementById('edit-risk-likelihood').value);
+            const impact = parseInt(document.getElementById('edit-risk-impact').value);
+            const riskScore = likelihood * impact;
+
+            const riskData = {
+                title: document.getElementById('edit-risk-title').value,
+                description: document.getElementById('edit-risk-description').value,
+                category: document.getElementById('edit-risk-category').value,
+                likelihood: likelihood,
+                impact: impact,
+                riskScore: riskScore,
+                status: document.getElementById('edit-risk-status').value,
+                owner: document.getElementById('edit-risk-owner').value,
+                dueDate: document.getElementById('edit-risk-due-date').value || null,
+                priority: document.getElementById('edit-risk-priority').value,
+                causes: document.getElementById('edit-risk-causes').value,
+                consequences: document.getElementById('edit-risk-consequences').value,
+                mitigation: document.getElementById('edit-risk-mitigation').value
+            };
+
+            if (currentEditingRisk) {
+                // Update existing risk
+                riskData.id = currentEditingRisk.id;
+                const riskIndex = risksData.findIndex(r => r.id === currentEditingRisk.id);
+                if (riskIndex !== -1) {
+                    risksData[riskIndex] = riskData;
+                    showAlert(`Risk "${riskData.title}" updated successfully`, 'success');
+                }
+            } else {
+                // Add new risk
+                riskData.id = Math.max(...risksData.map(r => r.id), 0) + 1;
+                risksData.push(riskData);
+                showAlert(`Risk "${riskData.title}" added successfully`, 'success');
+            }
+
+            // Update UI
+            updateRisksOverview();
+            updateRisksTable();
+            createRiskCharts();
+
+            // Close modal
+            bootstrap.Modal.getInstance(document.getElementById('editRiskModal')).hide();
+            currentEditingRisk = null;
+        }
+
+        function deleteRisk() {
+            if (!currentEditingRisk) return;
+
+            if (confirm(`Are you sure you want to delete the risk "${currentEditingRisk.title}"?`)) {
+                risksData = risksData.filter(r => r.id !== currentEditingRisk.id);
+                
+                updateRisksOverview();
+                updateRisksTable();
+                createRiskCharts();
+                
+                bootstrap.Modal.getInstance(document.getElementById('editRiskModal')).hide();
+                showAlert(`Risk "${currentEditingRisk.title}" deleted successfully`, 'success');
+                currentEditingRisk = null;
+            }
+        }
+
+        function refreshRisks() {
+            loadRisksData();
+            showAlert('Risk register refreshed', 'info');
+        }
+
+        function exportRisks() {
+            const risksJson = JSON.stringify(risksData, null, 2);
+            const blob = new Blob([risksJson], { type: 'application/json' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'data-quality-risks.json';
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+            showAlert('Risk register exported successfully', 'success');
+        }
+    </script>
+            </div> <!-- Close main-content -->
+        </div> <!-- Close main-content -->
+    </div> <!-- Close container-fluid -->
+</body>
+</html> 

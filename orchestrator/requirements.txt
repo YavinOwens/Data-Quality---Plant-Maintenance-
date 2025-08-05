@@ -1,0 +1,8 @@
+apache-airflow==2.7.1
+psycopg2-binary==2.9.7
+requests==2.31.0
+pandas==2.0.3
+numpy==1.24.3
+python-dotenv==1.0.0
+structlog==23.1.0
+prometheus-client==0.17.1 

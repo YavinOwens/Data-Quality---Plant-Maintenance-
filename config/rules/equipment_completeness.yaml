@@ -1,0 +1,68 @@
+rule_name: equipment_completeness
+description: "Validate equipment master data completeness"
+category: completeness
+severity: high
+enabled: true
+
+validations:
+  - name: required_fields_check
+    description: "Check for missing required fields"
+    type: missing_fields
+    fields:
+      - Equipment
+      - EquipmentName
+      - EquipmentCategory
+    threshold: 0.05  # 5% missing allowed
+    
+  - name: empty_equipment_names
+    description: "Check for empty equipment names"
+    type: empty_strings
+    fields:
+      - EquipmentName
+    threshold: 0.01  # 1% empty names allowed
+    
+  - name: equipment_category_validation
+    description: "Validate equipment category values"
+    type: value_validation
+    field: EquipmentCategory
+    valid_values:
+      - M  # Machine
+      - F  # Functional Location
+      - K  # Kit
+      - P  # Plant
+    threshold: 0.0  # No invalid categories allowed
+
+business_rules:
+  - name: manufacturer_serial_number_format
+    description: "Validate manufacturer serial number format"
+    condition: "ManufacturerSerialNumber is not null"
+    pattern: "^[A-Z0-9]{8,20}$"
+    message: "Manufacturer serial number must be 8-20 alphanumeric characters"
+    
+  - name: functional_location_reference
+    description: "Check functional location reference format"
+    condition: "FunctionalLocation is not null"
+    pattern: "^[A-Z0-9]{3,}-[A-Z0-9]{3,}$"
+    message: "Functional location must follow format: XXX-XXX"
+
+metrics:
+  - name: completeness_score
+    calculation: "(total_records - missing_fields_count) / total_records * 100"
+    threshold: 95.0
+    
+  - name: data_quality_index
+    calculation: "completeness_score * 0.4 + accuracy_score * 0.3 + consistency_score * 0.3"
+    threshold: 90.0
+
+notifications:
+  - type: email
+    recipients: ["data.team@company.com"]
+    conditions:
+      - completeness_score < 90.0
+      - missing_fields_count > 100
+      
+  - type: slack
+    channel: "#data-quality-alerts"
+    conditions:
+      - severity == "high"
+      - rule_status == "failed" 

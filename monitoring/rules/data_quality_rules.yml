@@ -1,0 +1,40 @@
+groups:
+  - name: data_quality_rules
+    rules:
+      # Overall success rate
+      - record: data_quality:success_rate
+        expr: |
+          (
+            sum(validation_engine_validations_total{status="passed"})
+            /
+            sum(validation_engine_validations_total)
+          ) * 100
+
+      # Validation latency
+      - record: data_quality:validation_latency_seconds
+        expr: |
+          histogram_quantile(0.95, validation_engine_validation_duration_seconds_bucket)
+
+      # Rule execution rate
+      - record: data_quality:rule_execution_rate
+        expr: |
+          rate(validation_engine_rule_executions_total[5m])
+
+      # Data extraction rate
+      - record: data_quality:data_extraction_rate
+        expr: |
+          rate(sap_data_extraction_total[5m])
+
+      # API request rate
+      - record: data_quality:api_request_rate
+        expr: |
+          rate(logging_service_requests_total[5m])
+
+      # Error rate
+      - record: data_quality:error_rate
+        expr: |
+          (
+            sum(validation_engine_validations_total{status="failed"})
+            /
+            sum(validation_engine_validations_total)
+          ) * 100 

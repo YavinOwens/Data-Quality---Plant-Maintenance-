@@ -1,0 +1,19 @@
+# Simplified requirements for testing SAP S/4HANA Data Quality Workflow
+# Core dependencies only for testing
+
+# Web Framework
+flask==3.0.0
+flask-cors==4.0.0
+
+# Data Processing
+pandas==2.2.0
+numpy==1.26.4
+pyyaml==6.0.1
+
+# Utilities
+python-dotenv==1.0.1
+click==8.1.7
+requests==2.31.0
+
+# Testing
+pytest==8.0.0 

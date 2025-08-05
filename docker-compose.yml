@@ -1,0 +1,246 @@
+version: '3.8'
+
+services:
+  # Mock SAP Connector (replaces real SAP Connector for local development)
+  mock-sap:
+    build:
+      context: ./mock-sap
+      dockerfile: Dockerfile
+    container_name: mock-sap
+    depends_on:
+      postgres:
+        condition: service_started
+        required: true
+    environment:
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/health')"]
+      timeout: 10s
+      interval: 30s
+      retries: 3
+    networks:
+      - sap-network
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./config:/app/config
+    ports:
+      - "8000:8000"
+
+  # Validation Engine
+  validation-engine:
+    build:
+      context: ./validation-engine
+      dockerfile: Dockerfile
+    container_name: validation-engine
+    depends_on:
+      postgres:
+        condition: service_started
+        required: true
+      mock-sap:
+        condition: service_started
+        required: true
+    environment:
+      - DB_HOST=${DB_HOST:-postgres}
+      - DB_NAME=${DB_NAME:-sap_data_quality}
+      - DB_USER=${DB_USER:-sap_user}
+      - DB_PASSWORD=${DB_PASSWORD:-your_db_password}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - RULES_PATH=/app/config/rules
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8001/health')"]
+      timeout: 10s
+      interval: 30s
+      retries: 3
+    networks:
+      - sap-network
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./config:/app/config
+    ports:
+      - "8001:8001"
+
+  # Logging & Reporting Service
+  logging-service:
+    build:
+      context: ./logging-service
+      dockerfile: Dockerfile
+    container_name: logging-service
+    depends_on:
+      postgres:
+        condition: service_started
+        required: true
+    environment:
+      - DB_HOST=${DB_HOST:-postgres}
+      - DB_NAME=${DB_NAME:-sap_data_quality}
+      - DB_USER=${DB_USER:-sap_user}
+      - DB_PASSWORD=${DB_PASSWORD:-your_db_password}
+      - FLASK_ENV=production
+      - SECRET_KEY=${SECRET_KEY:-your-secret-key-here-change-in-production}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      timeout: 10s
+      interval: 30s
+      retries: 3
+    networks:
+      - sap-network
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./config:/app/config
+    ports:
+      - "8080:8080"
+
+  # Orchestrator (Airflow)
+  orchestrator:
+    build:
+      context: ./orchestrator
+      dockerfile: Dockerfile
+    container_name: orchestrator
+    depends_on:
+      postgres:
+        condition: service_started
+        required: true
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__CORE__FERNET_KEY=${AIRFLOW__CORE__FERNET_KEY:-your-fernet-key-here-change-in-production}
+      - AIRFLOW__CORE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${DB_USER:-sap_user}:${DB_PASSWORD:-your_db_password}@postgres:5432/${DB_NAME:-sap_data_quality}
+      - AIRFLOW__WEBSERVER__SECRET_KEY=${AIRFLOW__WEBSERVER__SECRET_KEY:-your-secret-key-here-change-in-production}
+      - SAP_CLIENT=${SAP_CLIENT:-100}
+      - SAP_HOST=${SAP_HOST:-mock-sap}
+      - SAP_PASSWORD=${SAP_PASSWORD:-your_sap_password}
+      - SAP_USERNAME=${SAP_USERNAME:-sap_user}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      timeout: 10s
+      interval: 30s
+      retries: 3
+    networks:
+      - sap-network
+    restart: unless-stopped
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+      - ./plugins:/opt/airflow/plugins
+      - ./config:/opt/airflow/config
+    ports:
+      - "8081:8080"
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: sap-postgres
+    environment:
+      - POSTGRES_DB=${DB_NAME:-sap_data_quality}
+      - POSTGRES_USER=${DB_USER:-sap_user}
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-your_db_password}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-sap_user} -d ${DB_NAME:-sap_data_quality}"]
+      timeout: 10s
+      interval: 30s
+      retries: 3
+    networks:
+      - sap-network
+    restart: unless-stopped
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+
+  # pgAdmin for Database Administration
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: sap-pgadmin
+    depends_on:
+      postgres:
+        condition: service_started
+        required: true
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=${PGADMIN_EMAIL:-admin@sap-data-quality.com}
+      - PGADMIN_DEFAULT_PASSWORD=${PGADMIN_PASSWORD:-admin}
+      - PGADMIN_CONFIG_SERVER_MODE=False
+      - PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED=False
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/misc/ping"]
+      timeout: 10s
+      interval: 30s
+      retries: 3
+    networks:
+      - sap-network
+    restart: unless-stopped
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+      - ./config/pgadmin/servers.json:/pgadmin4/servers.json
+    ports:
+      - "5050:80"
+
+  # Redis for Airflow
+  redis:
+    image: redis:7-alpine
+    container_name: sap-redis
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      timeout: 10s
+      interval: 30s
+      retries: 3
+    networks:
+      - sap-network
+    restart: unless-stopped
+
+  # Prometheus for Monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: sap-prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - sap-network
+    restart: unless-stopped
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+
+  # Grafana for Visualization
+  grafana:
+    image: grafana/grafana:latest
+    container_name: sap-grafana
+    depends_on:
+      prometheus:
+        condition: service_started
+        required: true
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+    networks:
+      - sap-network
+    restart: unless-stopped
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+    ports:
+      - "3000:3000"
+
+networks:
+  sap-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+volumes:
+  postgres_data:
+  pgadmin_data:
+  grafana_data:
+  prometheus_data: 
