@@ -6,7 +6,7 @@ A modular, containerized data quality workflow for SAP S/4HANA Plant Maintenance
 
 The system consists of the following Docker containers:
 
-- **SAP Connector** (Port 8000): Extracts data from SAP S/4HANA PM module
+- **Mock SAP Service** (Port 8000): Simulates SAP S/4HANA PM data extraction for development
 - **Validation Engine** (Port 8001): Runs data quality rules and validations
 - **Logging & Reporting Service** (Port 8080): Web dashboard and REST API
 - **Orchestrator** (Port 8081): Apache Airflow for workflow scheduling
@@ -28,8 +28,8 @@ The system consists of the following Docker containers:
 
 1. **Clone the repository**
    ```bash
-   git clone <repository-url>
-   cd sap_s4
+   git clone https://github.com/YavinOwens/Data-Quality---Plant-Maintenance-.git
+   cd Data-Quality---Plant-Maintenance-
    ```
 
 2. **Configure environment variables**
@@ -153,7 +153,7 @@ Access Prometheus at http://localhost:9090 for:
 
 ## 🔄 Workflow
 
-1. **Data Extraction**: SAP Connector extracts PM data from SAP S/4HANA
+1. **Data Extraction**: Mock SAP Service simulates PM data extraction
 2. **Validation**: Validation Engine applies data quality rules
 3. **Storage**: Results stored in PostgreSQL database
 4. **Reporting**: Logging Service provides web dashboard and API
@@ -203,7 +203,7 @@ curl http://localhost:8000/health
 - `GET /api/export/excel` - Export data as Excel
 - `GET /api/export/pdf` - Export data as PDF
 
-### SAP Connector (Port 8000)
+### Mock SAP Service (Port 8000)
 
 - `GET /health` - Health check
 - `GET /extract/equipment` - Extract equipment data
@@ -231,6 +231,7 @@ curl http://localhost:8000/health
 - [SAP Integration Guide](SAP_INTEGRATION_GUIDE.md) - Configure for real SAP systems
 - [Architecture Documentation](ARCHITECTURE.md) - Detailed technical architecture
 - [Data Quality Rules](config/rules/) - Rule configuration examples
+- [Audit Documentation](audit.md) - SOC2 and ISO27001 compliance
 
 ## 🤝 Contributing
 
@@ -259,4 +260,4 @@ For issues and questions:
 - [ ] Additional data quality rules
 - [ ] Machine learning-based anomaly detection
 - [ ] Real-time streaming validation
-- [ ] Advanced reporting features 
+- [ ] Advanced reporting features
