@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pandas as pd
 import numpy as np
+import requests
 from flask import Flask, request, jsonify, render_template, send_file
 from flask_cors import CORS
 from flask_restful import Api, Resource
@@ -74,6 +75,10 @@ class DataQualityReporter:
         self.db_engine = create_engine(
             f"postgresql://{self.db_user}:{self.db_password}@{self.db_host}:5432/{self.db_name}"
         )
+        
+        # Ollama configuration for AI chat
+        self.ollama_url = os.getenv('OLLAMA_URL', 'http://host.docker.internal:11434')
+        self.ollama_model = os.getenv('OLLAMA_MODEL', 'phi3')
     
     def get_validation_summary(self, days: int = 30) -> Dict[str, Any]:
         """Get validation summary for the last N days"""
@@ -257,6 +262,65 @@ class DataQualityReporter:
         except Exception as e:
             logger.error(f"Failed to get quality trends: {str(e)}")
             return {}
+
+    def get_all_data_context(self) -> Dict[str, Any]:
+        """Get all data context for AI assistant"""
+        try:
+            context = {
+                'validation_summary': self.get_validation_summary(),
+                'recent_issues': self.get_recent_issues(limit=50),
+                'quality_trends': self.get_quality_trends()
+            }
+            return context
+        except Exception as e:
+            logger.error(f"Failed to get data context: {str(e)}")
+            return {}
+
+    def chat_with_ollama(self, user_message: str, context_data: Dict[str, Any]) -> str:
+        """Send message to Ollama and get response"""
+        try:
+            # Simplify the context to avoid timeout
+            summary = context_data.get('validation_summary', {})
+            recent_issues = context_data.get('recent_issues', [])
+            
+            # Create a simplified context
+            context_str = f"""
+            Data Quality Summary:
+            - Total datasets: {len(summary)}
+            - Recent issues count: {len(recent_issues)}
+            - Sample datasets: {list(summary.keys())[:3] if summary else 'None'}
+            """
+            
+            # Create system prompt
+            system_prompt = """You are a Data Quality AI Assistant. You help users understand their data quality metrics, identify issues, and provide insights. Be concise and helpful."""
+            
+            # Prepare the request to Ollama
+            ollama_request = {
+                "model": self.ollama_model,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": f"Context: {context_str}\n\nUser Question: {user_message}"}
+                ],
+                "stream": False
+            }
+            
+            # Send request to Ollama with shorter timeout
+            response = requests.post(
+                f"{self.ollama_url}/api/chat",
+                json=ollama_request,
+                timeout=15
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                return result.get('message', {}).get('content', 'Sorry, I could not process your request.')
+            else:
+                logger.error(f"Ollama API error: {response.status_code} - {response.text}")
+                return "Sorry, I'm having trouble connecting to the AI service. Please try again later."
+                
+        except Exception as e:
+            logger.error(f"Chat with Ollama failed: {str(e)}")
+            return "Sorry, I encountered an error while processing your request. Please try again."
     
     def generate_quality_report(self, dataset_name: str = None, days: int = 30) -> Dict[str, Any]:
         """Generate comprehensive quality report"""
@@ -700,6 +764,38 @@ def export_pdf():
         return jsonify({
             'status': 'error',
             'message': str(e)
+        }), 500
+
+@app.route('/api/chat', methods=['POST'])
+def chat():
+    """Chat endpoint for AI assistant"""
+    try:
+        data = request.get_json()
+        user_message = data.get('message', '')
+        
+        if not user_message:
+            return jsonify({
+                'status': 'error',
+                'message': 'No message provided'
+            }), 400
+        
+        # Get all data context for the AI
+        reporter = DataQualityReporter()
+        context_data = reporter.get_all_data_context()
+        
+        # Send to Ollama
+        response = reporter.chat_with_ollama(user_message, context_data)
+        
+        return jsonify({
+            'status': 'success',
+            'response': response
+        })
+        
+    except Exception as e:
+        logger.error(f"Chat error: {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'message': 'Failed to process chat request'
         }), 500
 
 if __name__ == '__main__':

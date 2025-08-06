@@ -10,9 +10,9 @@
     <!-- Font Awesome -->
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <!-- Chart.js -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js?v=3"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js?v=4"></script>
     <!-- Plotly.js -->
-    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js?v=3"></script>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js?v=4"></script>
     
     <style>
         :root {
@@ -3750,10 +3750,203 @@
                     }
                 });
             }
+
+            // Initialize chat (moved to after function definitions)
+            setTimeout(() => {
+                console.log('Chat interface initialized');
+                const chatButton = document.getElementById('chat-button');
+                if (chatButton) {
+                    console.log('Chat button found:', chatButton);
+                    chatButton.style.display = 'block';
+                    chatButton.style.position = 'fixed';
+                    chatButton.style.bottom = '30px';
+                    chatButton.style.right = '30px';
+                    chatButton.style.left = 'auto';
+                    chatButton.style.top = 'auto';
+                    chatButton.style.zIndex = '10000';
+                    chatButton.style.backgroundColor = '#007bff';
+                    chatButton.style.color = 'white';
+                    chatButton.style.borderRadius = '50%';
+                    chatButton.style.width = '60px';
+                    chatButton.style.height = '60px';
+                    chatButton.style.border = '3px solid #ffffff';
+                    chatButton.style.fontSize = '1.5rem';
+                    chatButton.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
+                    chatButton.style.transform = 'none';
+                    console.log('Chat button styles applied - positioned at bottom-right');
+                } else {
+                    console.log('Chat button not found');
+                }
+                setTimeout(() => {
+                    if (typeof addMessageToChat === 'function') {
+                        addMessageToChat('assistant', 'Hello! I\'m your Data Quality AI Assistant. I can help you understand your data quality metrics, identify issues, and provide insights. Ask me anything about your data quality!');
+                    }
+                }, 1000);
+            }, 100);
         });
+
+        // Chat functionality
+        let isChatOpen = false;
+
+        function toggleChat() {
+            const chatContainer = document.getElementById('chat-container');
+            const chatButton = document.getElementById('chat-button');
+            
+            isChatOpen = !isChatOpen;
+            
+            if (isChatOpen) {
+                chatContainer.style.display = 'block';
+                chatButton.innerHTML = '<i class="fas fa-times"></i>';
+                chatButton.style.backgroundColor = '#dc3545';
+            } else {
+                chatContainer.style.display = 'none';
+                chatButton.innerHTML = '<i class="fas fa-comments"></i>';
+                chatButton.style.backgroundColor = '#007bff';
+            }
+        }
+
+        function sendMessage() {
+            const messageInput = document.getElementById('chat-message-input');
+            const message = messageInput.value.trim();
+            
+            if (message) {
+                addMessageToChat('user', message);
+                messageInput.value = '';
+                
+                // Show typing indicator
+                addTypingIndicator();
+                
+                // Send to backend
+                fetch('/api/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ message: message })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    removeTypingIndicator();
+                    if (data.response) {
+                        addMessageToChat('assistant', data.response);
+                    } else {
+                        addMessageToChat('assistant', 'Sorry, I couldn\'t process your request. Please try again.');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    removeTypingIndicator();
+                    addMessageToChat('assistant', 'Sorry, there was an error processing your request. Please try again.');
+                });
+            }
+        }
+
+        function addMessageToChat(sender, message) {
+            const chatMessages = document.getElementById('chat-messages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `chat-message ${sender}-message`;
+            
+            const icon = sender === 'user' ? 'fas fa-user' : 'fas fa-robot';
+            const bgColor = sender === 'user' ? '#007bff' : '#f8f9fa';
+            const textColor = sender === 'user' ? 'white' : '#333';
+            
+            messageDiv.innerHTML = `
+                <div style="background-color: ${bgColor}; color: ${textColor}; padding: 10px; border-radius: 15px; margin: 5px 0; max-width: 80%; ${sender === 'user' ? 'margin-left: auto;' : 'margin-right: auto;'}">
+                    <i class="${icon}" style="margin-right: 5px;"></i>
+                    ${message}
+                </div>
+            `;
+            
+            chatMessages.appendChild(messageDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        function addTypingIndicator() {
+            const chatMessages = document.getElementById('chat-messages');
+            const typingDiv = document.createElement('div');
+            typingDiv.id = 'typing-indicator';
+            typingDiv.className = 'chat-message assistant-message';
+            typingDiv.innerHTML = `
+                <div style="background-color: #f8f9fa; color: #333; padding: 10px; border-radius: 15px; margin: 5px 0; max-width: 80%; margin-right: auto;">
+                    <i class="fas fa-robot" style="margin-right: 5px;"></i>
+                    <span class="typing-dots">Typing...</span>
+                </div>
+            `;
+            chatMessages.appendChild(typingDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        function removeTypingIndicator() {
+            const typingIndicator = document.getElementById('typing-indicator');
+            if (typingIndicator) {
+                typingIndicator.remove();
+            }
+        }
+
+        function handleChatKeyPress(event) {
+            if (event.key === 'Enter') {
+                sendMessage();
+            }
+        }
     </script>
             </div> <!-- Close main-content -->
         </div> <!-- Close main-content -->
     </div> <!-- Close container-fluid -->
+
+    <!-- Chat Interface -->
+    <button id="chat-button" onclick="toggleChat()" style="position: fixed !important; bottom: 30px !important; right: 30px !important; left: auto !important; top: auto !important; width: 60px !important; height: 60px !important; border-radius: 50% !important; border: 3px solid #ffffff !important; font-size: 1.5rem !important; z-index: 10000 !important; box-shadow: 0 4px 12px rgba(0,0,0,0.3) !important; background-color: #007bff !important; color: white !important; display: block !important; cursor: pointer !important; animation: pulse 2s infinite !important; transform: none !important;">
+        <i class="fas fa-comments"></i>
+    </button>
+
+    <div id="chat-container" style="display: none; position: fixed; bottom: 100px; right: 30px; width: 350px; height: 500px; background: white; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); z-index: 9999; border: 2px solid #007bff;">
+        <div style="background: #007bff; color: white; padding: 15px; border-radius: 13px 13px 0 0; font-weight: bold;">
+            <i class="fas fa-robot"></i> Data Quality AI Assistant
+        </div>
+        <div id="chat-messages" style="height: 400px; overflow-y: auto; padding: 15px;">
+            <!-- Messages will be added here -->
+        </div>
+        <div style="padding: 15px; border-top: 1px solid #eee;">
+            <div style="display: flex;">
+                <input type="text" id="chat-message-input" placeholder="Ask me about your data quality..." 
+                       style="flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 20px; margin-right: 10px;"
+                       onkeypress="handleChatKeyPress(event)">
+                <button onclick="sendMessage()" style="padding: 10px 15px; background: #007bff; color: white; border: none; border-radius: 20px; cursor: pointer;">
+                    <i class="fas fa-paper-plane"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <style>
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+        
+        .chat-message {
+            margin-bottom: 10px;
+        }
+        
+        .user-message {
+            text-align: right;
+        }
+        
+        .assistant-message {
+            text-align: left;
+        }
+        
+        .typing-dots::after {
+            content: '';
+            animation: dots 1.5s infinite;
+        }
+        
+        @keyframes dots {
+            0%, 20% { content: ''; }
+            40% { content: '.'; }
+            60% { content: '..'; }
+            80%, 100% { content: '...'; }
+        }
+    </style>
 </body>
 </html> 
