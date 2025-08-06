@@ -576,17 +576,15 @@ def require_role(role):
         def decorated_function(*args, **kwargs):
             if not current_user.is_authenticated:
                 return redirect(url_for('login'))
-            if current_user.role != role and current_user.role != 'admin':
-                auth_service.log_security_event(
-                    event_type='unauthorized_access',
-                    severity='high',
-                    source_ip=request.remote_addr,
-                    user_id=current_user.id,
-                    username=current_user.username,
-                    details=f'Attempted to access {request.endpoint} without proper role'
-                )
-                return jsonify({'error': 'Access denied'}), 403
+            
+            if current_user.role != role:
+                flash('Access denied. Insufficient privileges.', 'error')
+                return redirect(url_for('dashboard'))
+            
             return f(*args, **kwargs)
+        
+        # Make the function name unique to avoid Flask endpoint conflicts
+        decorated_function.__name__ = f.__name__
         return decorated_function
     return decorator
 
