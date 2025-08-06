@@ -263,6 +263,12 @@
                         </a>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link" href="#tasks" onclick="showSection('tasks')">
+                            <i class="fas fa-tasks me-2"></i>
+                            <span>Task Management</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link" href="#settings" onclick="showSection('settings')">
                             <i class="fas fa-cog me-2"></i>
                             <span>Settings</span>
@@ -1003,6 +1009,345 @@
             </div>
         </div>
 
+        <!-- Task Management Section -->
+        <div class="row mb-4" id="tasks-section" style="display: none;">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <div>
+                            <i class="fas fa-tasks me-2"></i>
+                            Task Management
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-outline-primary btn-sm" onclick="refreshTasks()">
+                                <i class="fas fa-sync-alt me-1"></i>Refresh
+                            </button>
+                            <button class="btn btn-outline-success btn-sm" onclick="exportTasks()">
+                                <i class="fas fa-download me-1"></i>Export Tasks
+                            </button>
+                            <button class="btn btn-outline-warning btn-sm" onclick="createNewTask()">
+                                <i class="fas fa-plus me-1"></i>Create Task
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <!-- Task Overview -->
+                        <div class="row mb-4">
+                            <div class="col-md-3">
+                                <div class="card bg-primary text-white">
+                                    <div class="card-body text-center">
+                                        <h4 id="total-tasks">-</h4>
+                                        <p class="mb-0">Total Tasks</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card bg-warning text-white">
+                                    <div class="card-body text-center">
+                                        <h4 id="in-progress-tasks">-</h4>
+                                        <p class="mb-0">In Progress</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card bg-success text-white">
+                                    <div class="card-body text-center">
+                                        <h4 id="completed-tasks">-</h4>
+                                        <p class="mb-0">Completed</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card bg-danger text-white">
+                                    <div class="card-body text-center">
+                                        <h4 id="overdue-tasks">-</h4>
+                                        <p class="mb-0">Overdue</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Task Filters -->
+                        <div class="row mb-3">
+                            <div class="col-md-12">
+                                <div class="d-flex gap-3 align-items-center">
+                                    <div>
+                                        <label for="task-status-filter" class="form-label">Status:</label>
+                                        <select id="task-status-filter" class="form-select form-select-sm" style="width: 150px;">
+                                            <option value="">All Status</option>
+                                            <option value="pending">Pending</option>
+                                            <option value="in_progress">In Progress</option>
+                                            <option value="completed">Completed</option>
+                                            <option value="cancelled">Cancelled</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label for="task-priority-filter" class="form-label">Priority:</label>
+                                        <select id="task-priority-filter" class="form-select form-select-sm" style="width: 150px;">
+                                            <option value="">All Priorities</option>
+                                            <option value="low">Low</option>
+                                            <option value="medium">Medium</option>
+                                            <option value="high">High</option>
+                                            <option value="critical">Critical</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label for="task-assignee-filter" class="form-label">Assignee:</label>
+                                        <select id="task-assignee-filter" class="form-select form-select-sm" style="width: 150px;">
+                                            <option value="">All Assignees</option>
+                                            <option value="Data Quality Team">Data Quality Team</option>
+                                            <option value="IT Operations">IT Operations</option>
+                                            <option value="Compliance Officer">Compliance Officer</option>
+                                            <option value="Finance Team">Finance Team</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label for="task-search" class="form-label">Search:</label>
+                                        <input type="text" id="task-search" class="form-control form-control-sm" placeholder="Search tasks..." style="width: 200px;">
+                                    </div>
+                                    <div>
+                                        <button class="btn btn-outline-secondary btn-sm" onclick="clearTaskFilters()" style="margin-top: 24px;">
+                                            <i class="fas fa-times me-1"></i>Clear Filters
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Task Board -->
+                        <div class="row mb-4">
+                            <div class="col-md-12">
+                                <div class="row">
+                                    <div class="col-md-3">
+                                        <div class="card">
+                                            <div class="card-header bg-light">
+                                                <h6 class="mb-0">Pending</h6>
+                                            </div>
+                                            <div class="card-body" id="pending-tasks" style="min-height: 300px;">
+                                                <!-- Pending tasks will be loaded here -->
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <div class="card">
+                                            <div class="card-header bg-warning text-white">
+                                                <h6 class="mb-0">In Progress</h6>
+                                            </div>
+                                            <div class="card-body" id="in-progress-tasks-board" style="min-height: 300px;">
+                                                <!-- In progress tasks will be loaded here -->
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <div class="card">
+                                            <div class="card-header bg-success text-white">
+                                                <h6 class="mb-0">Completed</h6>
+                                            </div>
+                                            <div class="card-body" id="completed-tasks-board" style="min-height: 300px;">
+                                                <!-- Completed tasks will be loaded here -->
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <div class="card">
+                                            <div class="card-header bg-danger text-white">
+                                                <h6 class="mb-0">Overdue</h6>
+                                            </div>
+                                            <div class="card-body" id="overdue-tasks-board" style="min-height: 300px;">
+                                                <!-- Overdue tasks will be loaded here -->
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Task List Table -->
+                        <div class="row">
+                            <div class="col-md-12">
+                                <div class="card">
+                                    <div class="card-header">
+                                        <h6 class="mb-0">All Tasks</h6>
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="table-responsive">
+                                            <table class="table table-hover" id="tasks-table">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Task ID</th>
+                                                        <th>Title</th>
+                                                        <th>Issue Source</th>
+                                                        <th>Assignee</th>
+                                                        <th>Priority</th>
+                                                        <th>Status</th>
+                                                        <th>Due Date</th>
+                                                        <th>Progress</th>
+                                                        <th>Actions</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody id="tasks-table-body">
+                                                    <!-- Tasks will be loaded here -->
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Task Details Modal -->
+        <div class="modal fade" id="taskModal" tabindex="-1">
+            <div class="modal-dialog modal-xl">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="task-modal-title">Task Details</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="row">
+                            <div class="col-md-8">
+                                <h6>Task Information</h6>
+                                <div id="task-details-content">
+                                    <!-- Task details will be populated here -->
+                                </div>
+                                
+                                <!-- Communication Section -->
+                                <div class="mt-4">
+                                    <h6>Communication</h6>
+                                    <div class="card">
+                                        <div class="card-body">
+                                            <div id="task-comments" style="max-height: 300px; overflow-y: auto;">
+                                                <!-- Comments will be loaded here -->
+                                            </div>
+                                            <div class="mt-3">
+                                                <textarea class="form-control" id="new-comment" rows="3" placeholder="Add a comment..."></textarea>
+                                                <button class="btn btn-primary btn-sm mt-2" onclick="addTaskComment()">
+                                                    <i class="fas fa-comment me-1"></i>Add Comment
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <h6>Task Actions</h6>
+                                <div class="d-grid gap-2">
+                                    <button class="btn btn-warning" onclick="updateTaskStatus('in_progress')">
+                                        <i class="fas fa-play me-1"></i>Start Task
+                                    </button>
+                                    <button class="btn btn-success" onclick="updateTaskStatus('completed')">
+                                        <i class="fas fa-check me-1"></i>Complete Task
+                                    </button>
+                                    <button class="btn btn-info" onclick="editTask()">
+                                        <i class="fas fa-edit me-1"></i>Edit Task
+                                    </button>
+                                    <button class="btn btn-danger" onclick="deleteTask()">
+                                        <i class="fas fa-trash me-1"></i>Delete Task
+                                    </button>
+                                </div>
+                                
+                                <h6 class="mt-4">Task Progress</h6>
+                                <div class="progress mb-3">
+                                    <div class="progress-bar" id="task-progress-bar" role="progressbar" style="width: 0%"></div>
+                                </div>
+                                <input type="range" class="form-range" id="task-progress-slider" min="0" max="100" value="0">
+                                <small class="text-muted">Progress: <span id="task-progress-text">0%</span></small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Create/Edit Task Modal -->
+        <div class="modal fade" id="editTaskModal" tabindex="-1">
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="edit-task-modal-title">Create New Task</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <form id="edit-task-form">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <h6>Task Information</h6>
+                                    <div class="mb-3">
+                                        <label for="edit-task-title" class="form-label">Task Title *</label>
+                                        <input type="text" class="form-control" id="edit-task-title" required>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="edit-task-description" class="form-label">Description *</label>
+                                        <textarea class="form-control" id="edit-task-description" rows="3" required></textarea>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="edit-task-issue-source" class="form-label">Issue Source</label>
+                                        <select class="form-select" id="edit-task-issue-source">
+                                            <option value="">Select Issue</option>
+                                            <option value="equipment_completeness">Equipment Completeness</option>
+                                            <option value="equipment_accuracy">Equipment Accuracy</option>
+                                            <option value="maintenance_orders_timeliness">Maintenance Orders Timeliness</option>
+                                            <option value="cross_reference_consistency">Cross Reference Consistency</option>
+                                        </select>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="edit-task-priority" class="form-label">Priority *</label>
+                                        <select class="form-select" id="edit-task-priority" required>
+                                            <option value="">Select Priority</option>
+                                            <option value="low">Low</option>
+                                            <option value="medium">Medium</option>
+                                            <option value="high">High</option>
+                                            <option value="critical">Critical</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <h6>Assignment & Timeline</h6>
+                                    <div class="mb-3">
+                                        <label for="edit-task-assignee" class="form-label">Assignee *</label>
+                                        <select class="form-select" id="edit-task-assignee" required>
+                                            <option value="">Select Assignee</option>
+                                            <option value="Data Quality Team">Data Quality Team</option>
+                                            <option value="IT Operations">IT Operations</option>
+                                            <option value="Compliance Officer">Compliance Officer</option>
+                                            <option value="Finance Team">Finance Team</option>
+                                        </select>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="edit-task-due-date" class="form-label">Due Date</label>
+                                        <input type="date" class="form-control" id="edit-task-due-date">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="edit-task-status" class="form-label">Status *</label>
+                                        <select class="form-select" id="edit-task-status" required>
+                                            <option value="pending">Pending</option>
+                                            <option value="in_progress">In Progress</option>
+                                            <option value="completed">Completed</option>
+                                            <option value="cancelled">Cancelled</option>
+                                        </select>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="edit-task-progress" class="form-label">Progress (%)</label>
+                                        <input type="range" class="form-range" id="edit-task-progress" min="0" max="100" value="0">
+                                        <small class="text-muted">Progress: <span id="edit-task-progress-text">0%</span></small>
+                                    </div>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="button" class="btn btn-danger" onclick="deleteTask()">Delete Task</button>
+                        <button type="button" class="btn btn-primary" onclick="saveTask()">Save Task</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Export Section -->
         <div class="row mb-4">
             <div class="col-12">
@@ -1396,8 +1741,16 @@
                     document.getElementById('risks-section').scrollIntoView({ behavior: 'smooth' });
                     loadRisksData();
                     break;
+                case 'tasks':
+                    document.getElementById('tasks-section').style.display = 'block';
+                    document.getElementById('tasks-section').scrollIntoView({ behavior: 'smooth' });
+                    loadTasksData();
+                    break;
                 case 'reports':
-                    document.querySelector('.card-header:contains("Export Reports")').scrollIntoView({ behavior: 'smooth' });
+                    const exportSection = document.querySelector('.card-header');
+                    if (exportSection && exportSection.textContent.includes('Export Reports')) {
+                        exportSection.scrollIntoView({ behavior: 'smooth' });
+                    }
                     break;
                 case 'settings':
                     // Future implementation
@@ -2841,6 +3194,563 @@
             document.body.removeChild(a);
             showAlert('Risk register exported successfully', 'success');
         }
+
+        // Task Management Functions
+        let tasksData = [];
+        let currentEditingTask = null;
+        let currentTaskComments = [];
+
+        async function loadTasksData() {
+            try {
+                const response = await fetch('/api/tasks');
+                if (response.ok) {
+                    tasksData = await response.json();
+                    updateTasksOverview();
+                    updateTasksTable();
+                    updateTaskBoards();
+                    setupTasksFilters();
+                } else {
+                    // If API doesn't exist, use mock data
+                    loadMockTasksData();
+                }
+            } catch (error) {
+                console.log('Tasks API not available, using mock data');
+                loadMockTasksData();
+            }
+        }
+
+        function loadMockTasksData() {
+            tasksData = [
+                {
+                    id: 1,
+                    title: 'Fix Equipment Completeness Issues',
+                    description: 'Address missing equipment data and incomplete records in the SAP system',
+                    issueSource: 'equipment_completeness',
+                    assignee: 'Data Quality Team',
+                    priority: 'high',
+                    status: 'in_progress',
+                    dueDate: '2024-03-15',
+                    progress: 65,
+                    createdDate: '2024-02-01',
+                    comments: [
+                        { id: 1, author: 'Data Quality Team', message: 'Started investigation of missing equipment records', timestamp: '2024-02-01 10:30:00' },
+                        { id: 2, author: 'IT Operations', message: 'Identified 150 incomplete equipment records', timestamp: '2024-02-02 14:15:00' },
+                        { id: 3, author: 'Data Quality Team', message: 'Working on data validation rules', timestamp: '2024-02-03 09:45:00' }
+                    ]
+                },
+                {
+                    id: 2,
+                    title: 'Resolve Equipment Accuracy Problems',
+                    description: 'Fix incorrect equipment categories and invalid serial number formats',
+                    issueSource: 'equipment_accuracy',
+                    assignee: 'IT Operations',
+                    priority: 'critical',
+                    status: 'pending',
+                    dueDate: '2024-02-28',
+                    progress: 0,
+                    createdDate: '2024-02-01',
+                    comments: [
+                        { id: 1, author: 'IT Operations', message: 'Task created for equipment accuracy issues', timestamp: '2024-02-01 11:00:00' }
+                    ]
+                },
+                {
+                    id: 3,
+                    title: 'Improve Maintenance Orders Timeliness',
+                    description: 'Address overdue maintenance orders and improve tracking processes',
+                    issueSource: 'maintenance_orders_timeliness',
+                    assignee: 'IT Operations',
+                    priority: 'medium',
+                    status: 'completed',
+                    dueDate: '2024-01-20',
+                    progress: 100,
+                    createdDate: '2024-01-15',
+                    comments: [
+                        { id: 1, author: 'IT Operations', message: 'Started analysis of overdue orders', timestamp: '2024-01-15 13:20:00' },
+                        { id: 2, author: 'IT Operations', message: 'Implemented automated tracking system', timestamp: '2024-01-18 16:30:00' },
+                        { id: 3, author: 'Data Quality Team', message: 'Verified all overdue orders are now resolved', timestamp: '2024-01-20 10:15:00' }
+                    ]
+                },
+                {
+                    id: 4,
+                    title: 'Fix Cross Reference Consistency',
+                    description: 'Resolve inconsistencies between equipment and functional location data',
+                    issueSource: 'cross_reference_consistency',
+                    assignee: 'Data Quality Team',
+                    priority: 'high',
+                    status: 'pending',
+                    dueDate: '2024-04-10',
+                    progress: 0,
+                    createdDate: '2024-02-01',
+                    comments: [
+                        { id: 1, author: 'Data Quality Team', message: 'Task created for cross-reference issues', timestamp: '2024-02-01 15:45:00' }
+                    ]
+                },
+                {
+                    id: 5,
+                    title: 'Update Data Validation Rules',
+                    description: 'Enhance validation rules based on recent data quality findings',
+                    issueSource: 'equipment_completeness',
+                    assignee: 'Data Quality Team',
+                    priority: 'medium',
+                    status: 'in_progress',
+                    dueDate: '2024-03-01',
+                    progress: 40,
+                    createdDate: '2024-02-01',
+                    comments: [
+                        { id: 1, author: 'Data Quality Team', message: 'Analyzing current validation rules', timestamp: '2024-02-01 16:20:00' },
+                        { id: 2, author: 'Data Quality Team', message: 'Drafting new validation criteria', timestamp: '2024-02-02 11:30:00' }
+                    ]
+                }
+            ];
+            updateTasksOverview();
+            updateTasksTable();
+            updateTaskBoards();
+            setupTasksFilters();
+        }
+
+        function updateTasksOverview() {
+            const totalTasks = tasksData.length;
+            const inProgressTasks = tasksData.filter(t => t.status === 'in_progress').length;
+            const completedTasks = tasksData.filter(t => t.status === 'completed').length;
+            const overdueTasks = tasksData.filter(t => {
+                if (!t.dueDate || t.status === 'completed') return false;
+                return new Date(t.dueDate) < new Date();
+            }).length;
+
+            document.getElementById('total-tasks').textContent = totalTasks;
+            document.getElementById('in-progress-tasks').textContent = inProgressTasks;
+            document.getElementById('completed-tasks').textContent = completedTasks;
+            document.getElementById('overdue-tasks').textContent = overdueTasks;
+        }
+
+        function updateTasksTable() {
+            const tbody = document.getElementById('tasks-table-body');
+            tbody.innerHTML = '';
+
+            tasksData.forEach(task => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>T${task.id.toString().padStart(3, '0')}</td>
+                    <td>${task.title}</td>
+                    <td><span class="badge bg-info">${task.issueSource.replace('_', ' ')}</span></td>
+                    <td>${task.assignee}</td>
+                    <td><span class="badge bg-${getTaskPriorityColor(task.priority)}">${task.priority}</span></td>
+                    <td><span class="badge bg-${getTaskStatusColor(task.status)}">${task.status.replace('_', ' ')}</span></td>
+                    <td>${task.dueDate ? new Date(task.dueDate).toLocaleDateString() : 'No due date'}</td>
+                    <td>
+                        <div class="progress" style="height: 20px;">
+                            <div class="progress-bar bg-${getTaskProgressColor(task.progress)}" style="width: ${task.progress}%">
+                                ${task.progress}%
+                            </div>
+                        </div>
+                    </td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-primary" onclick="viewTaskDetails(${task.id})">
+                            <i class="fas fa-eye"></i>
+                        </button>
+                        <button class="btn btn-sm btn-outline-warning" onclick="editTask(${task.id})">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        function updateTaskBoards() {
+            updateTaskBoardsWithData(tasksData);
+        }
+
+        function updateTaskBoardsWithData(allTasks) {
+            // Update pending tasks
+            const pendingTasks = allTasks.filter(t => t.status === 'pending');
+            document.getElementById('pending-tasks').innerHTML = pendingTasks.map(task => 
+                createTaskCard(task)
+            ).join('');
+
+            // Update in progress tasks
+            const inProgressTasks = allTasks.filter(t => t.status === 'in_progress');
+            document.getElementById('in-progress-tasks-board').innerHTML = inProgressTasks.map(task => 
+                createTaskCard(task)
+            ).join('');
+
+            // Update completed tasks
+            const completedTasks = allTasks.filter(t => t.status === 'completed');
+            document.getElementById('completed-tasks-board').innerHTML = completedTasks.map(task => 
+                createTaskCard(task)
+            ).join('');
+
+            // Update overdue tasks
+            const overdueTasks = allTasks.filter(t => {
+                if (!t.dueDate || t.status === 'completed') return false;
+                return new Date(t.dueDate) < new Date();
+            });
+            document.getElementById('overdue-tasks-board').innerHTML = overdueTasks.map(task => 
+                createTaskCard(task)
+            ).join('');
+        }
+
+        function createTaskCard(task) {
+            const isOverdue = task.dueDate && new Date(task.dueDate) < new Date() && task.status !== 'completed';
+            return `
+                <div class="card mb-2 ${isOverdue ? 'border-danger' : ''}" style="cursor: pointer;" onclick="viewTaskDetails(${task.id})">
+                    <div class="card-body p-2">
+                        <h6 class="card-title mb-1">${task.title}</h6>
+                        <p class="card-text small text-muted mb-1">${task.description.substring(0, 50)}...</p>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span class="badge bg-${getTaskPriorityColor(task.priority)}">${task.priority}</span>
+                            <small class="text-muted">${task.assignee}</small>
+                        </div>
+                        <div class="progress mt-2" style="height: 8px;">
+                            <div class="progress-bar bg-${getTaskProgressColor(task.progress)}" style="width: ${task.progress}%"></div>
+                        </div>
+                        ${isOverdue ? '<small class="text-danger">Overdue</small>' : ''}
+                    </div>
+                </div>
+            `;
+        }
+
+        function setupTasksFilters() {
+            document.getElementById('task-status-filter').addEventListener('change', filterTasks);
+            document.getElementById('task-priority-filter').addEventListener('change', filterTasks);
+            document.getElementById('task-assignee-filter').addEventListener('change', filterTasks);
+            document.getElementById('task-search').addEventListener('input', filterTasks);
+            
+            // Add clear filters functionality
+            document.getElementById('task-search').addEventListener('keyup', function(e) {
+                if (e.key === 'Escape') {
+                    this.value = '';
+                    filterTasks();
+                }
+            });
+        }
+
+        function filterTasks() {
+            const statusFilter = document.getElementById('task-status-filter').value;
+            const priorityFilter = document.getElementById('task-priority-filter').value;
+            const assigneeFilter = document.getElementById('task-assignee-filter').value;
+            const searchFilter = document.getElementById('task-search').value.toLowerCase();
+
+            console.log('Filtering tasks with:', { statusFilter, priorityFilter, assigneeFilter, searchFilter });
+
+            const filteredTasks = tasksData.filter(task => {
+                const matchesStatus = !statusFilter || task.status === statusFilter;
+                const matchesPriority = !priorityFilter || task.priority === priorityFilter;
+                const matchesAssignee = !assigneeFilter || task.assignee === assigneeFilter;
+                const matchesSearch = !searchFilter || 
+                    task.title.toLowerCase().includes(searchFilter) ||
+                    task.description.toLowerCase().includes(searchFilter) ||
+                    task.assignee.toLowerCase().includes(searchFilter);
+
+                const matches = matchesStatus && matchesPriority && matchesAssignee && matchesSearch;
+                console.log(`Task "${task.title}": status=${matchesStatus}, priority=${matchesPriority}, assignee=${matchesAssignee}, search=${matchesSearch}, matches=${matches}`);
+                
+                return matches;
+            });
+
+            console.log(`Filtered ${filteredTasks.length} tasks out of ${tasksData.length} total`);
+            updateTasksTableWithData(filteredTasks);
+            updateTaskBoardsWithData(filteredTasks);
+        }
+
+        function updateTasksTableWithData(tasks) {
+            const tbody = document.getElementById('tasks-table-body');
+            tbody.innerHTML = '';
+
+            tasks.forEach(task => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>T${task.id.toString().padStart(3, '0')}</td>
+                    <td>${task.title}</td>
+                    <td><span class="badge bg-info">${task.issueSource.replace('_', ' ')}</span></td>
+                    <td>${task.assignee}</td>
+                    <td><span class="badge bg-${getTaskPriorityColor(task.priority)}">${task.priority}</span></td>
+                    <td><span class="badge bg-${getTaskStatusColor(task.status)}">${task.status.replace('_', ' ')}</span></td>
+                    <td>${task.dueDate ? new Date(task.dueDate).toLocaleDateString() : 'No due date'}</td>
+                    <td>
+                        <div class="progress" style="height: 20px;">
+                            <div class="progress-bar bg-${getTaskProgressColor(task.progress)}" style="width: ${task.progress}%">
+                                ${task.progress}%
+                            </div>
+                        </div>
+                    </td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-primary" onclick="viewTaskDetails(${task.id})">
+                            <i class="fas fa-eye"></i>
+                        </button>
+                        <button class="btn btn-sm btn-outline-warning" onclick="editTask(${task.id})">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        function getTaskPriorityColor(priority) {
+            switch (priority) {
+                case 'critical': return 'danger';
+                case 'high': return 'warning';
+                case 'medium': return 'info';
+                case 'low': return 'secondary';
+                default: return 'secondary';
+            }
+        }
+
+        function getTaskStatusColor(status) {
+            switch (status) {
+                case 'completed': return 'success';
+                case 'in_progress': return 'warning';
+                case 'pending': return 'info';
+                case 'cancelled': return 'danger';
+                default: return 'secondary';
+            }
+        }
+
+        function getTaskProgressColor(progress) {
+            if (progress >= 80) return 'success';
+            if (progress >= 50) return 'warning';
+            return 'danger';
+        }
+
+        function viewTaskDetails(taskId) {
+            const task = tasksData.find(t => t.id === taskId);
+            if (!task) return;
+
+            currentEditingTask = task;
+            currentTaskComments = task.comments || [];
+
+            document.getElementById('task-modal-title').textContent = task.title;
+            
+            const detailsContent = `
+                <div class="row">
+                    <div class="col-md-6">
+                        <p><strong>Description:</strong> ${task.description}</p>
+                        <p><strong>Issue Source:</strong> <span class="badge bg-info">${task.issueSource.replace('_', ' ')}</span></p>
+                        <p><strong>Assignee:</strong> ${task.assignee}</p>
+                        <p><strong>Priority:</strong> <span class="badge bg-${getTaskPriorityColor(task.priority)}">${task.priority}</span></p>
+                    </div>
+                    <div class="col-md-6">
+                        <p><strong>Status:</strong> <span class="badge bg-${getTaskStatusColor(task.status)}">${task.status.replace('_', ' ')}</span></p>
+                        <p><strong>Due Date:</strong> ${task.dueDate ? new Date(task.dueDate).toLocaleDateString() : 'No due date'}</p>
+                        <p><strong>Created:</strong> ${new Date(task.createdDate).toLocaleDateString()}</p>
+                        <p><strong>Progress:</strong> ${task.progress}%</p>
+                    </div>
+                </div>
+            `;
+            
+            document.getElementById('task-details-content').innerHTML = detailsContent;
+            document.getElementById('task-progress-bar').style.width = `${task.progress}%`;
+            document.getElementById('task-progress-slider').value = task.progress;
+            document.getElementById('task-progress-text').textContent = `${task.progress}%`;
+
+            // Load comments
+            loadTaskComments();
+
+            new bootstrap.Modal(document.getElementById('taskModal')).show();
+        }
+
+        function loadTaskComments() {
+            const commentsContainer = document.getElementById('task-comments');
+            commentsContainer.innerHTML = '';
+
+            currentTaskComments.forEach(comment => {
+                const commentHtml = `
+                    <div class="border-bottom pb-2 mb-2">
+                        <div class="d-flex justify-content-between">
+                            <strong>${comment.author}</strong>
+                            <small class="text-muted">${comment.timestamp}</small>
+                        </div>
+                        <p class="mb-0">${comment.message}</p>
+                    </div>
+                `;
+                commentsContainer.innerHTML += commentHtml;
+            });
+        }
+
+        function addTaskComment() {
+            const commentText = document.getElementById('new-comment').value.trim();
+            if (!commentText) return;
+
+            const newComment = {
+                id: currentTaskComments.length + 1,
+                author: 'Current User',
+                message: commentText,
+                timestamp: new Date().toLocaleString()
+            };
+
+            currentTaskComments.push(newComment);
+            
+            // Add to task data
+            if (!currentEditingTask.comments) {
+                currentEditingTask.comments = [];
+            }
+            currentEditingTask.comments.push(newComment);
+
+            loadTaskComments();
+            document.getElementById('new-comment').value = '';
+            showAlert('Comment added successfully', 'success');
+        }
+
+        function updateTaskStatus(newStatus) {
+            if (!currentEditingTask) return;
+
+            currentEditingTask.status = newStatus;
+            if (newStatus === 'completed') {
+                currentEditingTask.progress = 100;
+            } else if (newStatus === 'in_progress' && currentEditingTask.progress === 0) {
+                currentEditingTask.progress = 25;
+            }
+
+            updateTasksOverview();
+            updateTasksTable();
+            updateTaskBoards();
+            
+            showAlert(`Task status updated to ${newStatus.replace('_', ' ')}`, 'success');
+        }
+
+        function createNewTask() {
+            currentEditingTask = null;
+            document.getElementById('edit-task-modal-title').textContent = 'Create New Task';
+            document.getElementById('edit-task-form').reset();
+            document.getElementById('edit-task-progress').value = 0;
+            document.getElementById('edit-task-progress-text').textContent = '0%';
+            new bootstrap.Modal(document.getElementById('editTaskModal')).show();
+        }
+
+        function editTask(taskId = null) {
+            if (taskId) {
+                currentEditingTask = tasksData.find(t => t.id === taskId);
+                if (!currentEditingTask) return;
+            }
+
+            if (currentEditingTask) {
+                document.getElementById('edit-task-modal-title').textContent = 'Edit Task';
+                document.getElementById('edit-task-title').value = currentEditingTask.title;
+                document.getElementById('edit-task-description').value = currentEditingTask.description;
+                document.getElementById('edit-task-issue-source').value = currentEditingTask.issueSource;
+                document.getElementById('edit-task-priority').value = currentEditingTask.priority;
+                document.getElementById('edit-task-assignee').value = currentEditingTask.assignee;
+                document.getElementById('edit-task-due-date').value = currentEditingTask.dueDate;
+                document.getElementById('edit-task-status').value = currentEditingTask.status;
+                document.getElementById('edit-task-progress').value = currentEditingTask.progress;
+                document.getElementById('edit-task-progress-text').textContent = `${currentEditingTask.progress}%`;
+            }
+
+            new bootstrap.Modal(document.getElementById('editTaskModal')).show();
+        }
+
+        function saveTask() {
+            const form = document.getElementById('edit-task-form');
+            if (!form.checkValidity()) {
+                form.reportValidity();
+                return;
+            }
+
+            const taskData = {
+                title: document.getElementById('edit-task-title').value,
+                description: document.getElementById('edit-task-description').value,
+                issueSource: document.getElementById('edit-task-issue-source').value,
+                priority: document.getElementById('edit-task-priority').value,
+                assignee: document.getElementById('edit-task-assignee').value,
+                dueDate: document.getElementById('edit-task-due-date').value || null,
+                status: document.getElementById('edit-task-status').value,
+                progress: parseInt(document.getElementById('edit-task-progress').value),
+                createdDate: new Date().toISOString().split('T')[0],
+                comments: []
+            };
+
+            if (currentEditingTask) {
+                // Update existing task
+                taskData.id = currentEditingTask.id;
+                taskData.comments = currentEditingTask.comments || [];
+                const taskIndex = tasksData.findIndex(t => t.id === currentEditingTask.id);
+                if (taskIndex !== -1) {
+                    tasksData[taskIndex] = taskData;
+                    showAlert(`Task "${taskData.title}" updated successfully`, 'success');
+                }
+            } else {
+                // Add new task
+                taskData.id = Math.max(...tasksData.map(t => t.id), 0) + 1;
+                tasksData.push(taskData);
+                showAlert(`Task "${taskData.title}" created successfully`, 'success');
+            }
+
+            // Update UI
+            updateTasksOverview();
+            updateTasksTable();
+            updateTaskBoards();
+
+            // Close modal
+            bootstrap.Modal.getInstance(document.getElementById('editTaskModal')).hide();
+            currentEditingTask = null;
+        }
+
+        function deleteTask() {
+            if (!currentEditingTask) return;
+
+            if (confirm(`Are you sure you want to delete the task "${currentEditingTask.title}"?`)) {
+                tasksData = tasksData.filter(t => t.id !== currentEditingTask.id);
+                
+                updateTasksOverview();
+                updateTasksTable();
+                updateTaskBoards();
+                
+                bootstrap.Modal.getInstance(document.getElementById('editTaskModal')).hide();
+                showAlert(`Task "${currentEditingTask.title}" deleted successfully`, 'success');
+                currentEditingTask = null;
+            }
+        }
+
+        function refreshTasks() {
+            loadTasksData();
+            showAlert('Task management refreshed', 'info');
+        }
+
+        function exportTasks() {
+            const tasksJson = JSON.stringify(tasksData, null, 2);
+            const blob = new Blob([tasksJson], { type: 'application/json' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'data-quality-tasks.json';
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+            showAlert('Tasks exported successfully', 'success');
+        }
+
+        function clearTaskFilters() {
+            document.getElementById('task-status-filter').value = '';
+            document.getElementById('task-priority-filter').value = '';
+            document.getElementById('task-assignee-filter').value = '';
+            document.getElementById('task-search').value = '';
+            filterTasks();
+            showAlert('Filters cleared', 'info');
+        }
+
+        // Add event listeners for task progress slider
+        document.addEventListener('DOMContentLoaded', function() {
+            const progressSlider = document.getElementById('edit-task-progress');
+            if (progressSlider) {
+                progressSlider.addEventListener('input', function() {
+                    document.getElementById('edit-task-progress-text').textContent = this.value + '%';
+                });
+            }
+
+            const taskProgressSlider = document.getElementById('task-progress-slider');
+            if (taskProgressSlider) {
+                taskProgressSlider.addEventListener('input', function() {
+                    const progress = this.value;
+                    document.getElementById('task-progress-text').textContent = progress + '%';
+                    document.getElementById('task-progress-bar').style.width = progress + '%';
+                    if (currentEditingTask) {
+                        currentEditingTask.progress = parseInt(progress);
+                    }
+                });
+            }
+        });
     </script>
             </div> <!-- Close main-content -->
         </div> <!-- Close main-content -->
