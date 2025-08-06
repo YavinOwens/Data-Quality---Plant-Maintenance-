@@ -77,7 +77,6 @@ class DataQualityReporter:
             f"postgresql://{self.db_user}:{self.db_password}@{self.db_host}:5432/{self.db_name}"
         )
         
-<<<<<<< HEAD
         # Ollama configuration for AI chat
         self.ollama_url = os.getenv('OLLAMA_URL', 'http://host.docker.internal:11434')
         self.ollama_model = os.getenv('OLLAMA_MODEL', 'phi3')
@@ -89,15 +88,15 @@ class DataQualityReporter:
             
             query = text("""
                 SELECT 
-                    dataset_name,
-                    rule_name,
-                    status,
-                    results,
+                    validation_type as dataset_name,
+                    validation_name as rule_name,
+                    CASE WHEN success_rate >= 0.95 THEN 'passed' ELSE 'failed' END as status,
+                    error_details as results,
                     COUNT(*) as count
                 FROM validation_results 
                 WHERE created_at >= :since_date
-                GROUP BY dataset_name, rule_name, status, results
-                ORDER BY dataset_name, rule_name
+                GROUP BY validation_type, validation_name, status, error_details
+                ORDER BY validation_type, validation_name
             """)
             
             with self.db_engine.connect() as conn:
@@ -171,10 +170,10 @@ class DataQualityReporter:
             query = text("""
                 SELECT 
                     id,
-                    dataset_name,
-                    rule_name,
-                    status,
-                    results,
+                    validation_type as dataset_name,
+                    validation_name as rule_name,
+                    CASE WHEN success_rate >= 0.95 THEN 'passed' ELSE 'failed' END as status,
+                    error_details as results,
                     created_at
                 FROM validation_results 
                 ORDER BY created_at DESC
@@ -236,13 +235,13 @@ class DataQualityReporter:
             query = text("""
                 SELECT 
                     DATE(created_at) as date,
-                    dataset_name,
-                    status,
+                    validation_type as dataset_name,
+                    CASE WHEN success_rate >= 0.95 THEN 'passed' ELSE 'failed' END as status,
                     COUNT(*) as count
                 FROM validation_results 
                 WHERE created_at >= :since_date
-                GROUP BY DATE(created_at), dataset_name, status
-                ORDER BY date, dataset_name, status
+                GROUP BY DATE(created_at), validation_type, status
+                ORDER BY date, validation_type, status
             """)
             
             with self.db_engine.connect() as conn:
@@ -375,12 +374,81 @@ class DataQualityReporter:
             }
     
     def get_all_data_context(self) -> Dict[str, Any]:
-        """Get all data quality context for the chatbot"""
+        """Get comprehensive data quality context for the chatbot"""
         try:
+            # Get all data sections
+            validation_summary = self.get_validation_summary(30)
+            recent_issues = self.get_recent_issues(50)
+            quality_trends = self.get_quality_trends(30)
+            
+            # Calculate overall metrics
+            total_validations = sum(dataset.get('total_validations', 0) for dataset in validation_summary.values())
+            total_passed = sum(dataset.get('passed_validations', 0) for dataset in validation_summary.values())
+            total_failed = sum(dataset.get('failed_validations', 0) for dataset in validation_summary.values())
+            overall_success_rate = (total_passed / total_validations * 100) if total_validations > 0 else 0
+            
+            # Get dataset-specific metrics
+            dataset_metrics = {}
+            for dataset_name, dataset_data in validation_summary.items():
+                dataset_metrics[dataset_name] = {
+                    'total_validations': dataset_data.get('total_validations', 0),
+                    'passed_validations': dataset_data.get('passed_validations', 0),
+                    'failed_validations': dataset_data.get('failed_validations', 0),
+                    'success_rate': dataset_data.get('success_rate', 0),
+                    'rules': dataset_data.get('rules', {})
+                }
+            
+            # Get recent issues summary
+            recent_issues_summary = {
+                'total_issues': len(recent_issues),
+                'failed_count': len([issue for issue in recent_issues if issue.get('status') == 'failed']),
+                'passed_count': len([issue for issue in recent_issues if issue.get('status') == 'passed']),
+                'by_dataset': {},
+                'by_rule': {}
+            }
+            
+            for issue in recent_issues:
+                dataset = issue.get('dataset_name', 'unknown')
+                rule = issue.get('rule_name', 'unknown')
+                
+                if dataset not in recent_issues_summary['by_dataset']:
+                    recent_issues_summary['by_dataset'][dataset] = {'failed': 0, 'passed': 0}
+                if rule not in recent_issues_summary['by_rule']:
+                    recent_issues_summary['by_rule'][rule] = {'failed': 0, 'passed': 0}
+                
+                if issue.get('status') == 'failed':
+                    recent_issues_summary['by_dataset'][dataset]['failed'] += 1
+                    recent_issues_summary['by_rule'][rule]['failed'] += 1
+                else:
+                    recent_issues_summary['by_dataset'][dataset]['passed'] += 1
+                    recent_issues_summary['by_rule'][rule]['passed'] += 1
+            
+            # Get quality trends summary
+            trends_summary = {}
+            for dataset_name, trend_data in quality_trends.items():
+                if trend_data and 'dates' in trend_data and 'success_rates' in trend_data:
+                    dates = trend_data['dates']
+                    rates = trend_data['success_rates']
+                    if dates and rates:
+                        trends_summary[dataset_name] = {
+                            'latest_rate': rates[-1] if rates else 0,
+                            'average_rate': sum(rates) / len(rates) if rates else 0,
+                            'trend_direction': 'improving' if len(rates) > 1 and rates[-1] > rates[0] else 'declining' if len(rates) > 1 and rates[-1] < rates[0] else 'stable',
+                            'data_points': len(rates)
+                        }
+            
             context = {
-                'validation_summary': self.get_validation_summary(30),
-                'recent_issues': self.get_recent_issues(20),
-                'quality_trends': self.get_quality_trends(30),
+                'overall_metrics': {
+                    'total_validations': total_validations,
+                    'total_passed': total_passed,
+                    'total_failed': total_failed,
+                    'overall_success_rate': overall_success_rate
+                },
+                'dataset_metrics': dataset_metrics,
+                'recent_issues': recent_issues,
+                'recent_issues_summary': recent_issues_summary,
+                'quality_trends': quality_trends,
+                'trends_summary': trends_summary,
                 'current_time': datetime.utcnow().isoformat()
             }
             return context
@@ -398,16 +466,46 @@ class DataQualityReporter:
             logger.info(f"Data context keys: {list(data_context.keys())}")
             logger.info(f"Validation summary keys: {list(data_context.get('validation_summary', {}).keys())}")
             
-            # Create system prompt with context
-            system_prompt = f"""You are a Data Quality Assistant. The current data quality metrics are: Equipment Accuracy {data_context['validation_summary'].get('equipment_accuracy', {}).get('success_rate', 0):.1f}%, Equipment Completeness {data_context['validation_summary'].get('equipment_completeness', {}).get('success_rate', 0):.1f}%, Maintenance Orders Timeliness {data_context['validation_summary'].get('maintenance_orders_timeliness', {}).get('success_rate', 0):.1f}%, Cross Reference Consistency {data_context['validation_summary'].get('cross_reference_consistency', {}).get('success_rate', 0):.1f}%. There are {len(data_context['recent_issues'])} recent validation runs. When asked about data quality status, respond with these specific metrics."""
+            # Create optimized context for faster response
+            overall_metrics = data_context.get('overall_metrics', {})
+            dataset_metrics = data_context.get('dataset_metrics', {})
+            recent_issues_summary = data_context.get('recent_issues_summary', {})
             
-            logger.info(f"System prompt: {system_prompt}")
+            # Build concise context string
+            context_parts = []
+            
+            # Overall metrics
+            total_validations = overall_metrics.get('total_validations', 0)
+            total_passed = overall_metrics.get('total_passed', 0)
+            total_failed = overall_metrics.get('total_failed', 0)
+            overall_success_rate = overall_metrics.get('overall_success_rate', 0)
+            context_parts.append(f"Overall: {total_validations} validations, {overall_success_rate:.1f}% success rate")
+            
+            # Dataset metrics (top 3)
+            dataset_info = []
+            for i, (dataset_name, metrics) in enumerate(dataset_metrics.items()):
+                if i >= 3:  # Limit to top 3 datasets
+                    break
+                success_rate = metrics.get('success_rate', 0)
+                dataset_info.append(f"{dataset_name}: {success_rate:.1f}%")
+            if dataset_info:
+                context_parts.append(f"Datasets: {'; '.join(dataset_info)}")
+            
+            # Recent issues summary
+            total_issues = recent_issues_summary.get('total_issues', 0)
+            failed_count = recent_issues_summary.get('failed_count', 0)
+            context_parts.append(f"Recent: {total_issues} issues, {failed_count} failed")
+            
+            context_str = " | ".join(context_parts)
+            
+            system_prompt = """You are a Data Quality AI Assistant. Answer questions about data quality metrics, datasets, and validation issues. Be specific and helpful."""
+            
+            # Create optimized user message
+            enhanced_message = f"""Context: {context_str}
 
-            # Prepare the request to Ollama
-            # Include data context in the user message for better response
-            enhanced_message = f"""Data Quality Metrics: Equipment Accuracy {data_context['validation_summary'].get('equipment_accuracy', {}).get('success_rate', 0):.1f}%, Equipment Completeness {data_context['validation_summary'].get('equipment_completeness', {}).get('success_rate', 0):.1f}%, Maintenance Orders Timeliness {data_context['validation_summary'].get('maintenance_orders_timeliness', {}).get('success_rate', 0):.1f}%, Cross Reference Consistency {data_context['validation_summary'].get('cross_reference_consistency', {}).get('success_rate', 0):.1f}%. Recent validation runs: {len(data_context['recent_issues'])}.
+Question: {user_message}
 
-User question: {user_message}"""
+Answer based on the data quality metrics above."""
             
             ollama_request = {
                 "model": self.ollama_model,
@@ -542,38 +640,7 @@ api.add_resource(ValidationSummaryResource, '/api/validation-summary')
 api.add_resource(RecentIssuesResource, '/api/recent-issues')
 api.add_resource(QualityReportResource, '/api/quality-report')
 
-# Chat API endpoint
-@app.route('/api/chat', methods=['POST'])
-def chat():
-    """Chat with Ollama AI assistant"""
-    REQUEST_COUNT.labels(endpoint='chat').inc()
-    
-    try:
-        data = request.get_json()
-        if not data or 'message' not in data:
-            return jsonify({
-                'status': 'error',
-                'message': 'Message is required'
-            }), 400
-        
-        user_message = data['message']
-        if not user_message.strip():
-            return jsonify({
-                'status': 'error',
-                'message': 'Message cannot be empty'
-            }), 400
-        
-        # Get response from Ollama
-        response = reporter.chat_with_ollama(user_message)
-        
-        return jsonify(response)
-        
-    except Exception as e:
-        logger.error(f"Chat endpoint error: {str(e)}")
-        return jsonify({
-            'status': 'error',
-            'message': f'Internal error: {str(e)}'
-        }), 500
+
 
 # Web Routes
 @app.route('/')
@@ -910,12 +977,9 @@ def chat():
         context_data = reporter.get_all_data_context()
         
         # Send to Ollama
-        response = reporter.chat_with_ollama(user_message, context_data)
+        response = reporter.chat_with_ollama(user_message)
         
-        return jsonify({
-            'status': 'success',
-            'response': response
-        })
+        return jsonify(response)
         
     except Exception as e:
         logger.error(f"Chat error: {str(e)}")
