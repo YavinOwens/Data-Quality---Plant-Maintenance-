@@ -45,6 +45,7 @@ def generate_historical_validations():
         for day in range(30, -1, -1):
             current_date = today - timedelta(days=day)
             
+<<<<<<< HEAD
             # Generate 4 validations per day
             for _ in range(4):
                 validation_type = random.choice(validation_types)
@@ -87,7 +88,6 @@ def generate_historical_validations():
                     json.dumps(error_details) if error_details else None,
                     current_date
                 ))
-        
         conn.commit()
         cursor.close()
         conn.close()
