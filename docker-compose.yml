@@ -80,6 +80,11 @@ services:
       - DB_PASSWORD=${DB_PASSWORD:-your_db_password}
       - FLASK_ENV=production
       - SECRET_KEY=${SECRET_KEY:-your-secret-key-here-change-in-production}
+      - OLLAMA_URL=${OLLAMA_URL:-http://host.docker.internal:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-phi3}
+      - RATE_LIMIT_ENABLED=true
+      - AUDIT_LOGGING_ENABLED=true
+      - SECURITY_MONITORING_ENABLED=true
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       timeout: 10s

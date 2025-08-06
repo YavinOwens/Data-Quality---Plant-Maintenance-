@@ -1,37 +1,19 @@
-# Web Framework
 flask==2.3.3
 flask-cors==4.0.0
-gunicorn==21.2.0
-jinja2==3.1.2
-
-# Database
-psycopg2-binary==2.9.7
-sqlalchemy==2.0.21
-
-# Data Processing
-pandas==2.1.1
-numpy==1.24.3
-plotly==5.17.0
-dash==2.14.1
-
-# API & Serialization
-marshmallow==3.20.1
 flask-restful==0.3.10
-
-# Monitoring & Logging
-prometheus-client==0.17.1
-structlog==23.2.0
-
-# Utilities
-python-dotenv==1.0.0
-click==8.1.7
+sqlalchemy==2.0.21
+psycopg2-binary==2.9.7
+pandas==2.0.3
+numpy==1.24.3
 requests==2.31.0
-pyyaml==6.0.1
-
-# Export & Reporting
+structlog==23.1.0
+prometheus-client==0.17.1
+plotly==5.15.0
 openpyxl==3.1.2
 reportlab==4.0.4
-
-# Testing
-pytest==7.4.2
-pytest-cov==4.1.0 
+gunicorn==21.2.0
+ollama==0.1.7
+flask-login==0.6.3
+flask-session==0.5.0
+flask-limiter==3.5.0
+bcrypt==4.0.1 

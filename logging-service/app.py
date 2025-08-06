@@ -16,9 +16,12 @@ from pathlib import Path
 import pandas as pd
 import numpy as np
 import requests
-from flask import Flask, request, jsonify, render_template, send_file
+from flask import Flask, request, jsonify, render_template, send_file, session, redirect, url_for, flash
 from flask_cors import CORS
 from flask_restful import Api, Resource
+from flask_login import LoginManager, login_user, logout_user, login_required, current_user, UserMixin
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
 import structlog
 from sqlalchemy import create_engine, text, func
@@ -29,6 +32,10 @@ import openpyxl
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph
 from reportlab.lib.styles import getSampleStyleSheet
+
+# Import authentication modules
+from models import User, AuditLog, SecurityEvent
+from auth import AuthService
 
 # Configure structured logging
 structlog.configure(
@@ -55,6 +62,21 @@ logger = structlog.get_logger()
 logging.basicConfig(level=logging.INFO, stream=sys.stderr)
 
 app = Flask(__name__)
+app.secret_key = os.getenv('SECRET_KEY', 'your-secret-key-change-in-production')
+
+# Configure Flask-Login
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = 'login'
+login_manager.login_message = 'Please log in to access this page.'
+
+# Configure rate limiting
+limiter = Limiter(
+    app=app,
+    key_func=get_remote_address,
+    default_limits=["200 per day", "50 per hour"]
+)
+
 CORS(app)
 api = Api(app)
 
@@ -62,6 +84,137 @@ api = Api(app)
 REQUEST_COUNT = Counter('logging_service_requests_total', 'Total requests', ['endpoint'])
 REQUEST_LATENCY = Histogram('logging_service_request_duration_seconds', 'Request latency')
 REPORT_GENERATION_COUNT = Counter('logging_service_reports_generated_total', 'Reports generated', ['report_type'])
+
+# Initialize authentication service
+auth_service = None
+
+@login_manager.user_loader
+def load_user(user_id):
+    """Load user for Flask-Login"""
+    if auth_service:
+        return auth_service.get_user_by_id(int(user_id))
+    return None
+
+# Security middleware
+@app.before_request
+def before_request():
+    """Security middleware for all requests"""
+    global auth_service
+    
+    # Initialize auth service if not already done
+    if auth_service is None:
+        db_url = f"postgresql://{os.getenv('DB_USER', 'sap_user')}:{os.getenv('DB_PASSWORD', 'your_db_password')}@{os.getenv('DB_HOST', 'postgres')}:5432/{os.getenv('DB_NAME', 'sap_data_quality')}"
+        auth_service = AuthService(db_url)
+    
+    # Skip security checks for static files and health checks
+    if request.endpoint in ['static', 'health_check', 'metrics']:
+        return
+    
+    # Rate limiting check
+    if not auth_service.check_rate_limit(request.remote_addr, 'request', limit=100, window=60):
+        return jsonify({'error': 'Rate limit exceeded'}), 429
+    
+    # Log request for audit
+    if current_user.is_authenticated:
+        auth_service.log_audit_event(
+            user_id=current_user.id,
+            username=current_user.username,
+            action='page_access',
+            resource=request.endpoint,
+            ip_address=request.remote_addr,
+            user_agent=request.headers.get('User-Agent'),
+            details=f'Accessed {request.endpoint}'
+        )
+
+# Authentication routes
+@app.route('/login', methods=['GET', 'POST'])
+@limiter.limit("5 per minute")
+def login():
+    """Login page and authentication"""
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+        
+        if not username or not password:
+            return render_template('login.html', error='Please provide username and password')
+        
+        # Check rate limiting for login attempts
+        if not auth_service.check_rate_limit(request.remote_addr, 'login_attempt', limit=5, window=300):
+            auth_service.log_security_event(
+                event_type='rate_limit_exceeded',
+                severity='high',
+                source_ip=request.remote_addr,
+                details='Login rate limit exceeded'
+            )
+            return render_template('login.html', error='Too many login attempts. Please try again later.')
+        
+        user = auth_service.authenticate_user(username, password)
+        
+        if user:
+            login_user(user)
+            session.permanent = True
+            app.permanent_session_lifetime = timedelta(hours=8)
+            
+            # Log successful login
+            auth_service.log_audit_event(
+                user_id=user.id,
+                username=user.username,
+                action='login_success',
+                ip_address=request.remote_addr,
+                user_agent=request.headers.get('User-Agent'),
+                details='User logged in successfully'
+            )
+            
+            return redirect(url_for('dashboard'))
+        else:
+            return render_template('login.html', error='Invalid username or password')
+    
+    return render_template('login.html')
+
+@app.route('/logout')
+@login_required
+def logout():
+    """Logout user"""
+    if current_user.is_authenticated:
+        auth_service.log_audit_event(
+            user_id=current_user.id,
+            username=current_user.username,
+            action='logout',
+            ip_address=request.remote_addr,
+            user_agent=request.headers.get('User-Agent'),
+            details='User logged out'
+        )
+    
+    logout_user()
+    return redirect(url_for('login'))
+
+@app.route('/profile')
+@login_required
+def profile():
+    """User profile page"""
+    return render_template('profile.html', user=current_user)
+
+# Role-based access control decorator
+def require_role(role):
+    """Decorator to require specific role"""
+    def decorator(f):
+        @login_required
+        def decorated_function(*args, **kwargs):
+            if not current_user.is_authenticated:
+                return redirect(url_for('login'))
+            if current_user.role != role and current_user.role != 'admin':
+                auth_service.log_security_event(
+                    event_type='unauthorized_access',
+                    severity='high',
+                    source_ip=request.remote_addr,
+                    user_id=current_user.id,
+                    username=current_user.username,
+                    details=f'Attempted to access {request.endpoint} without proper role'
+                )
+                return jsonify({'error': 'Access denied'}), 403
+            return f(*args, **kwargs)
+        return decorated_function
+    return decorator
 
 class DataQualityReporter:
     """Handles data quality reporting and analytics"""
@@ -561,6 +714,8 @@ reporter = DataQualityReporter()
 class ValidationSummaryResource(Resource):
     """API endpoint for validation summary"""
     
+    @login_required
+    @limiter.limit("100 per hour")
     def get(self):
         """Get validation summary"""
         REQUEST_COUNT.labels(endpoint='validation_summary').inc()
@@ -585,6 +740,8 @@ class ValidationSummaryResource(Resource):
 class RecentIssuesResource(Resource):
     """API endpoint for recent issues"""
     
+    @login_required
+    @limiter.limit("100 per hour")
     def get(self):
         """Get recent validation issues"""
         REQUEST_COUNT.labels(endpoint='recent_issues').inc()
@@ -611,6 +768,8 @@ class RecentIssuesResource(Resource):
 class QualityReportResource(Resource):
     """API endpoint for quality reports"""
     
+    @login_required
+    @limiter.limit("50 per hour")
     def get(self):
         """Generate quality report"""
         REQUEST_COUNT.labels(endpoint='quality_report').inc()
@@ -640,14 +799,114 @@ api.add_resource(ValidationSummaryResource, '/api/validation-summary')
 api.add_resource(RecentIssuesResource, '/api/recent-issues')
 api.add_resource(QualityReportResource, '/api/quality-report')
 
+# Security API endpoints
+@app.route('/api/security/events')
+@login_required
+@require_role('admin')
+@limiter.limit("50 per hour")
+def security_events():
+    """Get security events and metrics"""
+    try:
+        # Get security events from the last 24 hours
+        query = text("""
+            SELECT 
+                event_type,
+                severity,
+                source_ip,
+                username,
+                details,
+                timestamp,
+                resolved
+            FROM security_events 
+            WHERE timestamp >= CURRENT_TIMESTAMP - INTERVAL '24 hours'
+            ORDER BY timestamp DESC
+            LIMIT 100
+        """)
+        
+        with reporter.db_engine.connect() as conn:
+            result = conn.execute(query)
+            events = []
+            for row in result:
+                events.append({
+                    'event_type': row.event_type,
+                    'severity': row.severity,
+                    'source_ip': row.source_ip,
+                    'username': row.username,
+                    'details': row.details,
+                    'timestamp': row.timestamp.isoformat(),
+                    'resolved': row.resolved
+                })
+        
+        # Get metrics
+        metrics_query = text("""
+            SELECT 
+                severity,
+                COUNT(*) as count
+            FROM security_events 
+            WHERE timestamp >= CURRENT_TIMESTAMP - INTERVAL '24 hours'
+            GROUP BY severity
+        """)
+        
+        with reporter.db_engine.connect() as conn:
+            result = conn.execute(metrics_query)
+            metrics = {'critical': 0, 'high': 0, 'medium': 0, 'low': 0}
+            for row in result:
+                metrics[row.severity] = row.count
+        
+        # Get additional metrics
+        additional_metrics = {
+            'active_users': len([u for u in auth_service.get_all_users() if u.is_active]),
+            'failed_logins': len([e for e in events if e['event_type'] == 'login_failed'])
+        }
+        metrics.update(additional_metrics)
+        
+        # Get chart data
+        chart_query = text("""
+            SELECT 
+                event_type,
+                COUNT(*) as count
+            FROM security_events 
+            WHERE timestamp >= CURRENT_TIMESTAMP - INTERVAL '24 hours'
+            GROUP BY event_type
+        """)
+        
+        with reporter.db_engine.connect() as conn:
+            result = conn.execute(chart_query)
+            chart_data = {'login_failed': 0, 'rate_limit': 0, 'unauthorized': 0, 'suspicious': 0}
+            for row in result:
+                if row.event_type in chart_data:
+                    chart_data[row.event_type] = row.count
+        
+        return jsonify({
+            'status': 'success',
+            'data': {
+                'events': events,
+                'metrics': metrics,
+                'chart_data': chart_data
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Security events failed: {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
 
+@app.route('/security')
+@login_required
+@require_role('admin')
+def security_dashboard():
+    """Security monitoring dashboard"""
+    return render_template('security.html', user=current_user)
 
 # Web Routes
 @app.route('/')
+@login_required
 def dashboard():
     """Main dashboard page"""
     REQUEST_COUNT.labels(endpoint='dashboard').inc()
-    return render_template('dashboard.html')
+    return render_template('dashboard.html', user=current_user)
 
 @app.route('/health')
 def health_check():
@@ -666,6 +925,8 @@ def metrics():
     return generate_latest(), 200, {'Content-Type': CONTENT_TYPE_LATEST}
 
 @app.route('/api/export/csv')
+@login_required
+@limiter.limit("10 per hour")
 def export_csv():
     """Export validation results as CSV"""
     REQUEST_COUNT.labels(endpoint='export_csv').inc()
@@ -739,6 +1000,8 @@ def export_csv():
         }), 500
 
 @app.route('/api/export/excel')
+@login_required
+@limiter.limit("10 per hour")
 def export_excel():
     """Export validation results as Excel"""
     REQUEST_COUNT.labels(endpoint='export_excel').inc()
@@ -834,6 +1097,8 @@ def export_excel():
         }), 500
 
 @app.route('/api/export/pdf')
+@login_required
+@limiter.limit("10 per hour")
 def export_pdf():
     """Export validation results as PDF"""
     REQUEST_COUNT.labels(endpoint='export_pdf').inc()
@@ -960,6 +1225,8 @@ def export_pdf():
         }), 500
 
 @app.route('/api/chat', methods=['POST'])
+@login_required
+@limiter.limit("30 per minute")
 def chat():
     """Chat endpoint for AI assistant"""
     try:

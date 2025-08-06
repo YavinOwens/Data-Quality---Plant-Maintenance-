@@ -274,6 +274,14 @@
                             <span>Settings</span>
                         </a>
                     </li>
+                    {% if user and user.role == 'admin' %}
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('security_dashboard') }}">
+                            <i class="fas fa-shield-alt me-2"></i>
+                            <span>Security</span>
+                        </a>
+                    </li>
+                    {% endif %}
                 </ul>
             </nav>
             <div class="sidebar-footer">
@@ -296,10 +304,29 @@
                         SAP S/4HANA Data Quality Dashboard
                     </a>
                     <div class="navbar-nav ms-auto">
-                        <span class="navbar-text">
+                        <span class="navbar-text me-3">
                             <i class="fas fa-signal me-1"></i>
                             <span id="system-status">Online</span>
                         </span>
+                        <div class="dropdown">
+                            <button class="btn btn-outline-light dropdown-toggle" type="button" id="userDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                                <i class="fas fa-user me-1"></i>
+                                {% if user %}
+                                    {{ user.username }}
+                                {% else %}
+                                    User
+                                {% endif %}
+                            </button>
+                            <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userDropdown">
+                                <li><a class="dropdown-item" href="{{ url_for('profile') }}">
+                                    <i class="fas fa-user-circle me-2"></i>Profile
+                                </a></li>
+                                <li><hr class="dropdown-divider"></li>
+                                <li><a class="dropdown-item" href="{{ url_for('logout') }}">
+                                    <i class="fas fa-sign-out-alt me-2"></i>Logout
+                                </a></li>
+                            </ul>
+                        </div>
                     </div>
                 </div>
             </nav>
