@@ -37,6 +37,20 @@ from reportlab.lib.styles import getSampleStyleSheet
 from models import User, AuditLog, SecurityEvent
 from auth import AuthService
 
+# Import additional security modules
+import re
+import hashlib
+import base64
+from functools import wraps
+from datetime import datetime, timedelta
+import json
+
+# Import caching and load balancing modules
+import redis
+from functools import lru_cache
+import threading
+import time
+
 # Configure structured logging
 structlog.configure(
     processors=[
@@ -88,6 +102,343 @@ REPORT_GENERATION_COUNT = Counter('logging_service_reports_generated_total', 'Re
 # Initialize authentication service
 auth_service = None
 
+# Caching Configuration
+CACHE_CONFIG = {
+    'redis_host': os.getenv('REDIS_HOST', 'redis'),
+    'redis_port': int(os.getenv('REDIS_PORT', 6379)),
+    'redis_db': int(os.getenv('REDIS_DB', 0)),
+    'default_ttl': 300,  # 5 minutes
+    'max_ttl': 3600,     # 1 hour
+    'enabled': os.getenv('CACHE_ENABLED', 'true').lower() == 'true'
+}
+
+# Load Balancing Configuration
+LOAD_BALANCER_CONFIG = {
+    'enabled': os.getenv('LOAD_BALANCER_ENABLED', 'false').lower() == 'true',
+    'health_check_interval': 30,  # seconds
+    'max_retries': 3,
+    'timeout': 10  # seconds
+}
+
+# Initialize Redis cache
+redis_client = None
+if CACHE_CONFIG['enabled']:
+    try:
+        redis_client = redis.Redis(
+            host=CACHE_CONFIG['redis_host'],
+            port=CACHE_CONFIG['redis_port'],
+            db=CACHE_CONFIG['redis_db'],
+            decode_responses=True
+        )
+        # Test connection
+        redis_client.ping()
+        logger.info("Redis cache initialized successfully")
+    except Exception as e:
+        logger.warning(f"Redis cache not available: {str(e)}")
+        redis_client = None
+
+def cache_get(key: str, default=None):
+    """Get value from cache"""
+    if not redis_client or not CACHE_CONFIG['enabled']:
+        return default
+    
+    try:
+        value = redis_client.get(key)
+        return json.loads(value) if value else default
+    except Exception as e:
+        logger.error(f"Cache get error: {str(e)}")
+        return default
+
+def cache_set(key: str, value, ttl: int = None):
+    """Set value in cache"""
+    if not redis_client or not CACHE_CONFIG['enabled']:
+        return False
+    
+    try:
+        ttl = ttl or CACHE_CONFIG['default_ttl']
+        redis_client.setex(key, ttl, json.dumps(value))
+        return True
+    except Exception as e:
+        logger.error(f"Cache set error: {str(e)}")
+        return False
+
+def cache_delete(key: str):
+    """Delete value from cache"""
+    if not redis_client or not CACHE_CONFIG['enabled']:
+        return False
+    
+    try:
+        redis_client.delete(key)
+        return True
+    except Exception as e:
+        logger.error(f"Cache delete error: {str(e)}")
+        return False
+
+def cache_clear_pattern(pattern: str):
+    """Clear cache entries matching pattern"""
+    if not redis_client or not CACHE_CONFIG['enabled']:
+        return False
+    
+    try:
+        keys = redis_client.keys(pattern)
+        if keys:
+            redis_client.delete(*keys)
+        return True
+    except Exception as e:
+        logger.error(f"Cache clear pattern error: {str(e)}")
+        return False
+
+def with_cache(ttl: int = None, key_prefix: str = ''):
+    """Decorator for caching function results"""
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            # Generate cache key
+            cache_key = f"{key_prefix}:{func.__name__}:{hash(str(args) + str(sorted(kwargs.items())))}"
+            
+            # Try to get from cache
+            cached_result = cache_get(cache_key)
+            if cached_result is not None:
+                return cached_result
+            
+            # Execute function and cache result
+            result = func(*args, **kwargs)
+            cache_set(cache_key, result, ttl or CACHE_CONFIG['default_ttl'])
+            
+            return result
+        return wrapper
+    return decorator
+
+# Load balancing health check
+def health_check_load_balancer():
+    """Health check for load balancer"""
+    try:
+        # Check database connection
+        if auth_service:
+            # Test database connection
+            test_query = auth_service.execute_query("SELECT 1")
+            if not test_query:
+                return False
+        
+        # Check Redis connection
+        if redis_client:
+            redis_client.ping()
+        
+        return True
+    except Exception as e:
+        logger.error(f"Health check failed: {str(e)}")
+        return False
+
+# Data Masking and DLP Configuration
+SENSITIVE_PATTERNS = {
+    'email': r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b',
+    'phone': r'\b\d{3}[-.]?\d{3}[-.]?\d{4}\b',
+    'ssn': r'\b\d{3}-\d{2}-\d{4}\b',
+    'credit_card': r'\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}\b',
+    'ip_address': r'\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b'
+}
+
+DLP_RULES = {
+    'sensitive_data_detected': {
+        'severity': 'high',
+        'action': 'log_and_alert',
+        'description': 'Sensitive data detected in request'
+    },
+    'suspicious_activity': {
+        'severity': 'medium',
+        'action': 'log_and_monitor',
+        'description': 'Suspicious activity detected'
+    },
+    'data_export_attempt': {
+        'severity': 'medium',
+        'action': 'log_and_audit',
+        'description': 'Data export attempt detected'
+    }
+}
+
+def mask_sensitive_data(text: str) -> str:
+    """Mask sensitive data in text"""
+    if not text:
+        return text
+    
+    masked_text = text
+    
+    # Mask email addresses
+    masked_text = re.sub(SENSITIVE_PATTERNS['email'], '[EMAIL]', masked_text)
+    
+    # Mask phone numbers
+    masked_text = re.sub(SENSITIVE_PATTERNS['phone'], '[PHONE]', masked_text)
+    
+    # Mask SSN
+    masked_text = re.sub(SENSITIVE_PATTERNS['ssn'], '[SSN]', masked_text)
+    
+    # Mask credit card numbers
+    masked_text = re.sub(SENSITIVE_PATTERNS['credit_card'], '[CC]', masked_text)
+    
+    # Mask IP addresses (except localhost)
+    def mask_ip(match):
+        ip = match.group(0)
+        if ip.startswith('127.') or ip.startswith('192.168.') or ip.startswith('10.'):
+            return ip
+        return '[IP]'
+    
+    masked_text = re.sub(SENSITIVE_PATTERNS['ip_address'], mask_ip, masked_text)
+    
+    return masked_text
+
+def detect_sensitive_data(text: str) -> dict:
+    """Detect sensitive data in text"""
+    findings = {}
+    
+    for data_type, pattern in SENSITIVE_PATTERNS.items():
+        matches = re.findall(pattern, text)
+        if matches:
+            findings[data_type] = {
+                'count': len(matches),
+                'examples': matches[:3]  # Limit examples
+            }
+    
+    return findings
+
+def dlp_check(data: str, context: str = 'general') -> dict:
+    """Perform Data Loss Prevention check"""
+    findings = detect_sensitive_data(data)
+    
+    if findings:
+        # Log DLP event
+        if auth_service:
+            auth_service.log_security_event(
+                event_type='dlp_violation',
+                severity='high',
+                source_ip=request.remote_addr if 'request' in globals() else None,
+                details=f'Sensitive data detected in {context}: {findings}'
+            )
+    
+    return {
+        'violation': bool(findings),
+        'findings': findings,
+        'context': context
+    }
+
+def compliance_report_generator(user_id: int, report_type: str = 'security') -> dict:
+    """Generate compliance reports"""
+    if not auth_service:
+        return {'error': 'Auth service not available'}
+    
+    try:
+        # Get audit logs for the last 30 days
+        audit_logs = auth_service.get_audit_logs(
+            user_id=user_id,
+            days=30
+        )
+        
+        # Get security events for the last 30 days
+        security_events = auth_service.get_security_events(
+            days=30
+        )
+        
+        # Calculate compliance metrics
+        total_events = len(audit_logs) + len(security_events)
+        security_events_by_severity = {}
+        user_activity_summary = {}
+        
+        for event in security_events:
+            severity = event.get('severity', 'unknown')
+            security_events_by_severity[severity] = security_events_by_severity.get(severity, 0) + 1
+        
+        for log in audit_logs:
+            action = log.get('action', 'unknown')
+            user_activity_summary[action] = user_activity_summary.get(action, 0) + 1
+        
+        # Generate compliance score
+        compliance_score = 100
+        if security_events_by_severity.get('critical', 0) > 0:
+            compliance_score -= 30
+        if security_events_by_severity.get('high', 0) > 5:
+            compliance_score -= 20
+        if security_events_by_severity.get('medium', 0) > 10:
+            compliance_score -= 10
+        
+        compliance_score = max(0, compliance_score)
+        
+        report = {
+            'report_type': report_type,
+            'generated_at': datetime.utcnow().isoformat(),
+            'period_days': 30,
+            'compliance_score': compliance_score,
+            'total_events': total_events,
+            'security_events_by_severity': security_events_by_severity,
+            'user_activity_summary': user_activity_summary,
+            'recommendations': []
+        }
+        
+        # Add recommendations based on findings
+        if compliance_score < 70:
+            report['recommendations'].append('Implement additional security controls')
+        if security_events_by_severity.get('critical', 0) > 0:
+            report['recommendations'].append('Address critical security events immediately')
+        if security_events_by_severity.get('high', 0) > 5:
+            report['recommendations'].append('Review and address high-severity events')
+        
+        return report
+        
+    except Exception as e:
+        logger.error(f"Error generating compliance report: {str(e)}")
+        return {'error': 'Failed to generate compliance report'}
+
+def enhanced_security_monitoring():
+    """Enhanced security monitoring and alerting"""
+    if not auth_service:
+        return
+    
+    try:
+        # Check for suspicious patterns
+        recent_events = auth_service.get_security_events(hours=1)
+        
+        # Detect potential threats
+        threats = []
+        
+        # Check for brute force attempts
+        failed_logins = [e for e in recent_events if e.get('event_type') == 'login_failed']
+        if len(failed_logins) > 10:
+            threats.append({
+                'type': 'brute_force_attempt',
+                'severity': 'high',
+                'description': f'Multiple failed login attempts detected: {len(failed_logins)}'
+            })
+        
+        # Check for unusual data access patterns
+        data_access_events = [e for e in recent_events if 'data_access' in e.get('event_type', '')]
+        if len(data_access_events) > 50:
+            threats.append({
+                'type': 'unusual_data_access',
+                'severity': 'medium',
+                'description': f'Unusual data access pattern detected: {len(data_access_events)} events'
+            })
+        
+        # Check for DLP violations
+        dlp_violations = [e for e in recent_events if e.get('event_type') == 'dlp_violation']
+        if dlp_violations:
+            threats.append({
+                'type': 'dlp_violation',
+                'severity': 'high',
+                'description': f'Data Loss Prevention violations detected: {len(dlp_violations)}'
+            })
+        
+        # Log threats if detected
+        for threat in threats:
+            auth_service.log_security_event(
+                event_type='threat_detected',
+                severity=threat['severity'],
+                details=threat['description']
+            )
+        
+        return threats
+        
+    except Exception as e:
+        logger.error(f"Error in enhanced security monitoring: {str(e)}")
+        return []
+
 @login_manager.user_loader
 def load_user(user_id):
     """Load user for Flask-Login"""
@@ -114,15 +465,38 @@ def before_request():
     if not auth_service.check_rate_limit(request.remote_addr, 'request', limit=100, window=60):
         return jsonify({'error': 'Rate limit exceeded'}), 429
     
-    # Log request for audit
+    # DLP Check for request data
+    if request.method in ['POST', 'PUT', 'PATCH']:
+        request_data = request.get_data(as_text=True)
+        if request_data:
+            dlp_result = dlp_check(request_data, f'request_{request.endpoint}')
+            if dlp_result['violation']:
+                # Log DLP violation but don't block the request
+                auth_service.log_security_event(
+                    event_type='dlp_violation',
+                    severity='high',
+                    source_ip=request.remote_addr,
+                    details=f'DLP violation in {request.endpoint}: {dlp_result["findings"]}'
+                )
+    
+    # Enhanced security monitoring
+    threats = enhanced_security_monitoring()
+    if threats:
+        logger.warning(f"Security threats detected: {threats}")
+    
+    # Log request for audit (with data masking)
     if current_user.is_authenticated:
+        # Mask sensitive data in user agent and other fields
+        masked_user_agent = mask_sensitive_data(request.headers.get('User-Agent', ''))
+        masked_ip = mask_sensitive_data(request.remote_addr)
+        
         auth_service.log_audit_event(
             user_id=current_user.id,
             username=current_user.username,
             action='page_access',
             resource=request.endpoint,
-            ip_address=request.remote_addr,
-            user_agent=request.headers.get('User-Agent'),
+            ip_address=masked_ip,
+            user_agent=masked_user_agent,
             details=f'Accessed {request.endpoint}'
         )
 
@@ -217,23 +591,18 @@ def require_role(role):
     return decorator
 
 class DataQualityReporter:
-    """Handles data quality reporting and analytics"""
+    """Data Quality Reporter for generating reports and metrics"""
     
     def __init__(self):
-        self.db_host = os.getenv('DB_HOST', 'postgres')
-        self.db_name = os.getenv('DB_NAME', 'sap_data_quality')
-        self.db_user = os.getenv('DB_USER', 'sap_user')
-        self.db_password = os.getenv('DB_PASSWORD', 'your_db_password')
+        """Initialize the reporter with database connection"""
+        self.db_url = f"postgresql://{os.getenv('DB_USER', 'sap_user')}:{os.getenv('DB_PASSWORD', 'your_db_password')}@{os.getenv('DB_HOST', 'postgres')}:5432/{os.getenv('DB_NAME', 'sap_data_quality')}"
+        self.engine = create_engine(self.db_url)
         
-        # Initialize database connection
-        self.db_engine = create_engine(
-            f"postgresql://{self.db_user}:{self.db_password}@{self.db_host}:5432/{self.db_name}"
-        )
-        
-        # Ollama configuration for AI chat
+        # Ollama configuration
         self.ollama_url = os.getenv('OLLAMA_URL', 'http://host.docker.internal:11434')
         self.ollama_model = os.getenv('OLLAMA_MODEL', 'phi3')
     
+    @with_cache(ttl=300, key_prefix='validation_summary')
     def get_validation_summary(self, days: int = 30) -> Dict[str, Any]:
         """Get validation summary for the last N days"""
         try:
@@ -252,7 +621,7 @@ class DataQualityReporter:
                 ORDER BY validation_type, validation_name
             """)
             
-            with self.db_engine.connect() as conn:
+            with self.engine.connect() as conn:
                 result = conn.execute(query, {'since_date': since_date})
                 rows = result.fetchall()
             
@@ -317,6 +686,7 @@ class DataQualityReporter:
             logger.error(f"Failed to get validation summary: {str(e)}")
             return {}
     
+    @with_cache(ttl=300, key_prefix='recent_issues')
     def get_recent_issues(self, limit: int = 50) -> List[Dict[str, Any]]:
         """Get recent validation issues"""
         try:
@@ -333,7 +703,7 @@ class DataQualityReporter:
                 LIMIT :limit
             """)
             
-            with self.db_engine.connect() as conn:
+            with self.engine.connect() as conn:
                 result = conn.execute(query, {'limit': limit})
                 rows = result.fetchall()
             
@@ -380,6 +750,7 @@ class DataQualityReporter:
             logger.error(f"Failed to get recent issues: {str(e)}")
             return []
     
+    @with_cache(ttl=600, key_prefix='quality_trends')
     def get_quality_trends(self, days: int = 30) -> Dict[str, Any]:
         """Get data quality trends over time"""
         try:
@@ -397,7 +768,7 @@ class DataQualityReporter:
                 ORDER BY date, validation_type, status
             """)
             
-            with self.db_engine.connect() as conn:
+            with self.engine.connect() as conn:
                 result = conn.execute(query, {'since_date': since_date})
                 rows = result.fetchall()
             
@@ -823,7 +1194,7 @@ def security_events():
             LIMIT 100
         """)
         
-        with reporter.db_engine.connect() as conn:
+        with reporter.engine.connect() as conn:
             result = conn.execute(query)
             events = []
             for row in result:
@@ -847,7 +1218,7 @@ def security_events():
             GROUP BY severity
         """)
         
-        with reporter.db_engine.connect() as conn:
+        with reporter.engine.connect() as conn:
             result = conn.execute(metrics_query)
             metrics = {'critical': 0, 'high': 0, 'medium': 0, 'low': 0}
             for row in result:
@@ -870,7 +1241,7 @@ def security_events():
             GROUP BY event_type
         """)
         
-        with reporter.db_engine.connect() as conn:
+        with reporter.engine.connect() as conn:
             result = conn.execute(chart_query)
             chart_data = {'login_failed': 0, 'rate_limit': 0, 'unauthorized': 0, 'suspicious': 0}
             for row in result:
@@ -898,7 +1269,199 @@ def security_events():
 @require_role('admin')
 def security_dashboard():
     """Security monitoring dashboard"""
-    return render_template('security.html', user=current_user)
+    return render_template('security.html')
+
+# Enhanced Security API Endpoints
+@app.route('/api/compliance/report')
+@login_required
+@require_role('admin')
+@limiter.limit("10 per hour")
+def generate_compliance_report():
+    """Generate compliance report"""
+    try:
+        report = compliance_report_generator(current_user.id, 'security')
+        return jsonify(report)
+    except Exception as e:
+        logger.error(f"Error generating compliance report: {str(e)}")
+        return jsonify({'error': 'Failed to generate compliance report'}), 500
+
+@app.route('/api/security/threats')
+@login_required
+@require_role('admin')
+@limiter.limit("30 per hour")
+def get_security_threats():
+    """Get current security threats"""
+    try:
+        threats = enhanced_security_monitoring()
+        return jsonify({
+            'threats': threats,
+            'timestamp': datetime.utcnow().isoformat()
+        })
+    except Exception as e:
+        logger.error(f"Error getting security threats: {str(e)}")
+        return jsonify({'error': 'Failed to get security threats'}), 500
+
+@app.route('/api/security/dlp/check', methods=['POST'])
+@login_required
+@limiter.limit("50 per hour")
+def check_dlp():
+    """Check data for DLP violations"""
+    try:
+        data = request.get_json()
+        text_to_check = data.get('text', '')
+        
+        if not text_to_check:
+            return jsonify({'error': 'No text provided'}), 400
+        
+        dlp_result = dlp_check(text_to_check, 'manual_check')
+        
+        return jsonify({
+            'violation': dlp_result['violation'],
+            'findings': dlp_result['findings'],
+            'masked_text': mask_sensitive_data(text_to_check)
+        })
+    except Exception as e:
+        logger.error(f"Error in DLP check: {str(e)}")
+        return jsonify({'error': 'Failed to perform DLP check'}), 500
+
+@app.route('/api/security/mask', methods=['POST'])
+@login_required
+@limiter.limit("100 per hour")
+def mask_data():
+    """Mask sensitive data in text"""
+    try:
+        data = request.get_json()
+        text_to_mask = data.get('text', '')
+        
+        if not text_to_mask:
+            return jsonify({'error': 'No text provided'}), 400
+        
+        masked_text = mask_sensitive_data(text_to_mask)
+        findings = detect_sensitive_data(text_to_mask)
+        
+        return jsonify({
+            'original_text': text_to_mask,
+            'masked_text': masked_text,
+            'findings': findings
+        })
+    except Exception as e:
+        logger.error(f"Error masking data: {str(e)}")
+        return jsonify({'error': 'Failed to mask data'}), 500
+
+@app.route('/api/security/audit/summary')
+@login_required
+@require_role('admin')
+@limiter.limit("20 per hour")
+def get_audit_summary():
+    """Get audit log summary"""
+    try:
+        if not auth_service:
+            return jsonify({'error': 'Auth service not available'}), 500
+        
+        # Get audit logs for different time periods
+        audit_24h = auth_service.get_audit_logs(hours=24)
+        audit_7d = auth_service.get_audit_logs(days=7)
+        audit_30d = auth_service.get_audit_logs(days=30)
+        
+        # Get security events
+        security_24h = auth_service.get_security_events(hours=24)
+        security_7d = auth_service.get_security_events(days=7)
+        security_30d = auth_service.get_security_events(days=30)
+        
+        # Calculate summary statistics
+        summary = {
+            'audit_logs': {
+                'last_24h': len(audit_24h),
+                'last_7d': len(audit_7d),
+                'last_30d': len(audit_30d)
+            },
+            'security_events': {
+                'last_24h': len(security_24h),
+                'last_7d': len(security_7d),
+                'last_30d': len(security_30d)
+            },
+            'top_actions': {},
+            'top_users': {},
+            'security_by_severity': {}
+        }
+        
+        # Calculate top actions and users
+        for log in audit_30d:
+            action = log.get('action', 'unknown')
+            user = log.get('username', 'unknown')
+            
+            summary['top_actions'][action] = summary['top_actions'].get(action, 0) + 1
+            summary['top_users'][user] = summary['top_users'].get(user, 0) + 1
+        
+        # Calculate security events by severity
+        for event in security_30d:
+            severity = event.get('severity', 'unknown')
+            summary['security_by_severity'][severity] = summary['security_by_severity'].get(severity, 0) + 1
+        
+        return jsonify(summary)
+    except Exception as e:
+        logger.error(f"Error getting audit summary: {str(e)}")
+        return jsonify({'error': 'Failed to get audit summary'}), 500
+
+@app.route('/api/security/cache/status')
+@login_required
+@require_role('admin')
+@limiter.limit("30 per hour")
+def get_cache_status():
+    """Get cache status"""
+    try:
+        if redis_client and CACHE_CONFIG['enabled']:
+            # Test Redis connection
+            redis_client.ping()
+            return jsonify({
+                'online': True,
+                'enabled': True,
+                'host': CACHE_CONFIG['redis_host'],
+                'port': CACHE_CONFIG['redis_port']
+            })
+        else:
+            return jsonify({
+                'online': False,
+                'enabled': CACHE_CONFIG['enabled'],
+                'error': 'Redis not configured or unavailable'
+            })
+    except Exception as e:
+        logger.error(f"Error checking cache status: {str(e)}")
+        return jsonify({
+            'online': False,
+            'enabled': CACHE_CONFIG['enabled'],
+            'error': str(e)
+        })
+
+@app.route('/api/security/cache/clear', methods=['POST'])
+@login_required
+@require_role('admin')
+@limiter.limit("10 per hour")
+def clear_cache():
+    """Clear all cache entries"""
+    try:
+        if not redis_client or not CACHE_CONFIG['enabled']:
+            return jsonify({'error': 'Cache not available'}), 400
+        
+        # Clear all keys
+        redis_client.flushdb()
+        
+        # Log the action
+        if auth_service:
+            auth_service.log_audit_event(
+                user_id=current_user.id,
+                username=current_user.username,
+                action='cache_clear',
+                details='All cache entries cleared'
+            )
+        
+        return jsonify({
+            'success': True,
+            'message': 'Cache cleared successfully'
+        })
+    except Exception as e:
+        logger.error(f"Error clearing cache: {str(e)}")
+        return jsonify({'error': 'Failed to clear cache'}), 500
 
 # Web Routes
 @app.route('/')
@@ -910,13 +1473,59 @@ def dashboard():
 
 @app.route('/health')
 def health_check():
-    """Health check endpoint"""
-    REQUEST_COUNT.labels(endpoint='health').inc()
+    """Basic health check endpoint"""
     return jsonify({
         'status': 'healthy',
         'timestamp': datetime.utcnow().isoformat(),
         'service': 'logging-service'
     })
+
+@app.route('/health/lb')
+def load_balancer_health_check():
+    """Load balancer health check endpoint"""
+    try:
+        # Perform comprehensive health checks
+        health_status = {
+            'status': 'healthy',
+            'timestamp': datetime.utcnow().isoformat(),
+            'service': 'logging-service',
+            'checks': {
+                'database': False,
+                'cache': False,
+                'auth_service': False
+            }
+        }
+        
+        # Check database connection
+        try:
+            if auth_service:
+                test_query = auth_service.execute_query("SELECT 1")
+                health_status['checks']['database'] = test_query is not None
+                health_status['checks']['auth_service'] = True
+        except Exception as e:
+            logger.error(f"Database health check failed: {str(e)}")
+        
+        # Check Redis cache
+        try:
+            if redis_client:
+                redis_client.ping()
+                health_status['checks']['cache'] = True
+        except Exception as e:
+            logger.error(f"Cache health check failed: {str(e)}")
+        
+        # Determine overall status
+        all_checks_passed = all(health_status['checks'].values())
+        health_status['status'] = 'healthy' if all_checks_passed else 'degraded'
+        
+        return jsonify(health_status)
+    except Exception as e:
+        logger.error(f"Load balancer health check failed: {str(e)}")
+        return jsonify({
+            'status': 'unhealthy',
+            'timestamp': datetime.utcnow().isoformat(),
+            'service': 'logging-service',
+            'error': str(e)
+        }), 500
 
 @app.route('/metrics')
 def metrics():
@@ -954,7 +1563,7 @@ def export_csv():
             query = text(str(query) + " AND dataset_name = :dataset_name")
             params['dataset_name'] = dataset_name
         
-        with reporter.db_engine.connect() as conn:
+        with reporter.engine.connect() as conn:
             result = conn.execute(query, params)
             rows = result.fetchall()
         
@@ -1029,7 +1638,7 @@ def export_excel():
             query = text(str(query) + " AND dataset_name = :dataset_name")
             params['dataset_name'] = dataset_name
         
-        with reporter.db_engine.connect() as conn:
+        with reporter.engine.connect() as conn:
             result = conn.execute(query, params)
             rows = result.fetchall()
         

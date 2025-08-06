@@ -6,216 +6,248 @@
     <title>Security Dashboard - SAP Data Quality</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        body {
-            background: #f8f9fa;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        }
         .security-card {
-            background: white;
-            border-radius: 15px;
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
-            margin-bottom: 20px;
-            border: none;
+            border-left: 4px solid #dc3545;
+            background-color: #f8f9fa;
         }
-        .security-header {
-            background: linear-gradient(135deg, #dc3545, #c82333);
+        .security-card.warning {
+            border-left-color: #ffc107;
+        }
+        .security-card.success {
+            border-left-color: #28a745;
+        }
+        .security-card.info {
+            border-left-color: #17a2b8;
+        }
+        .threat-indicator {
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        .dlp-tool {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
-            border-radius: 15px 15px 0 0;
-            padding: 20px;
-        }
-        .security-metric {
-            text-align: center;
-            padding: 20px;
             border-radius: 10px;
-            margin-bottom: 15px;
-            color: white;
+            padding: 20px;
+            margin-bottom: 20px;
         }
-        .metric-critical { background: linear-gradient(135deg, #dc3545, #c82333); }
-        .metric-high { background: linear-gradient(135deg, #fd7e14, #e55a00); }
-        .metric-medium { background: linear-gradient(135deg, #ffc107, #e0a800); }
-        .metric-low { background: linear-gradient(135deg, #28a745, #1e7e34); }
-        .metric-info { background: linear-gradient(135deg, #17a2b8, #138496); }
-        
-        .metric-value {
-            font-size: 2.5rem;
+        .compliance-score {
+            font-size: 2rem;
             font-weight: bold;
-            margin-bottom: 5px;
         }
-        .metric-label {
-            font-size: 0.9rem;
-            opacity: 0.9;
-        }
-        
-        .event-table {
-            border-radius: 10px;
-            overflow: hidden;
-        }
-        .event-table thead th {
-            background: #343a40;
-            color: white;
-            border: none;
-            font-weight: 600;
-        }
-        
-        .severity-badge {
-            padding: 5px 10px;
-            border-radius: 15px;
-            font-size: 0.8rem;
-            font-weight: 600;
-        }
-        .severity-critical { background: #dc3545; color: white; }
-        .severity-high { background: #fd7e14; color: white; }
-        .severity-medium { background: #ffc107; color: #212529; }
-        .severity-low { background: #28a745; color: white; }
-        
-        .btn-back {
-            background: linear-gradient(135deg, #667eea, #764ba2);
-            border: none;
-            border-radius: 10px;
-            padding: 10px 20px;
-            color: white;
-            text-decoration: none;
+        .cache-status {
             display: inline-block;
-            margin-bottom: 20px;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
         }
-        .btn-back:hover {
-            color: white;
-            text-decoration: none;
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
-        }
+        .cache-online { background-color: #28a745; }
+        .cache-offline { background-color: #dc3545; }
     </style>
 </head>
 <body>
     <div class="container-fluid">
         <div class="row">
-            <div class="col-12">
-                <a href="{{ url_for('dashboard') }}" class="btn-back">
-                    <i class="fas fa-arrow-left"></i> Back to Dashboard
-                </a>
-                
-                <div class="security-card">
-                    <div class="security-header">
-                        <h2><i class="fas fa-shield-alt"></i> Security Monitoring Dashboard</h2>
-                        <p class="mb-0">Real-time security events and audit logs</p>
+            <!-- Sidebar -->
+            <nav class="col-md-2 d-none d-md-block bg-dark sidebar">
+                <div class="sidebar-sticky">
+                    <ul class="nav flex-column">
+                        <li class="nav-item">
+                            <a class="nav-link text-white" href="/">
+                                <i class="fas fa-tachometer-alt"></i> Dashboard
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link text-white active" href="/security">
+                                <i class="fas fa-shield-alt"></i> Security
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link text-white" href="/profile">
+                                <i class="fas fa-user"></i> Profile
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link text-white" href="/logout">
+                                <i class="fas fa-sign-out-alt"></i> Logout
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+            </nav>
+
+            <!-- Main content -->
+            <main role="main" class="col-md-10 ml-sm-auto px-4">
+                <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+                    <h1 class="h2">
+                        <i class="fas fa-shield-alt"></i> Security Dashboard
+                    </h1>
+                    <div class="btn-toolbar mb-2 mb-md-0">
+                        <div class="btn-group mr-2">
+                            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="refreshSecurityData()">
+                                <i class="fas fa-sync-alt"></i> Refresh
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-primary" onclick="generateComplianceReport()">
+                                <i class="fas fa-file-alt"></i> Compliance Report
+                            </button>
+                        </div>
                     </div>
-                    <div class="card-body">
-                        <!-- Security Metrics -->
-                        <div class="row mb-4">
-                            <div class="col-md-2">
-                                <div class="security-metric metric-critical">
-                                    <div class="metric-value" id="critical-events">-</div>
-                                    <div class="metric-label">Critical Events</div>
-                                </div>
-                            </div>
-                            <div class="col-md-2">
-                                <div class="security-metric metric-high">
-                                    <div class="metric-value" id="high-events">-</div>
-                                    <div class="metric-label">High Severity</div>
-                                </div>
-                            </div>
-                            <div class="col-md-2">
-                                <div class="security-metric metric-medium">
-                                    <div class="metric-value" id="medium-events">-</div>
-                                    <div class="metric-label">Medium Severity</div>
-                                </div>
-                            </div>
-                            <div class="col-md-2">
-                                <div class="security-metric metric-low">
-                                    <div class="metric-value" id="low-events">-</div>
-                                    <div class="metric-label">Low Severity</div>
-                                </div>
-                            </div>
-                            <div class="col-md-2">
-                                <div class="security-metric metric-info">
-                                    <div class="metric-value" id="total-users">-</div>
-                                    <div class="metric-label">Active Users</div>
-                                </div>
-                            </div>
-                            <div class="col-md-2">
-                                <div class="security-metric metric-info">
-                                    <div class="metric-value" id="failed-logins">-</div>
-                                    <div class="metric-label">Failed Logins</div>
-                                </div>
+                </div>
+
+                <!-- Security Overview -->
+                <div class="row mb-4">
+                    <div class="col-md-3">
+                        <div class="card security-card">
+                            <div class="card-body">
+                                <h5 class="card-title">
+                                    <i class="fas fa-exclamation-triangle text-danger"></i> Critical Events
+                                </h5>
+                                <h2 class="card-text" id="critical-events">-</h2>
                             </div>
                         </div>
-                        
-                        <!-- Security Events Chart -->
-                        <div class="row mb-4">
-                            <div class="col-md-6">
-                                <div class="security-card">
-                                    <div class="card-header">
-                                        <h5><i class="fas fa-chart-pie"></i> Security Events by Type</h5>
-                                    </div>
-                                    <div class="card-body">
-                                        <canvas id="securityChart" height="300"></canvas>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="security-card">
-                                    <div class="card-header">
-                                        <h5><i class="fas fa-chart-line"></i> Events Timeline</h5>
-                                    </div>
-                                    <div class="card-body">
-                                        <canvas id="timelineChart" height="300"></canvas>
-                                    </div>
-                                </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card security-card warning">
+                            <div class="card-body">
+                                <h5 class="card-title">
+                                    <i class="fas fa-exclamation-circle text-warning"></i> High Events
+                                </h5>
+                                <h2 class="card-text" id="high-events">-</h2>
                             </div>
                         </div>
-                        
-                        <!-- Recent Security Events -->
-                        <div class="security-card">
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card security-card info">
+                            <div class="card-body">
+                                <h5 class="card-title">
+                                    <i class="fas fa-users"></i> Active Users
+                                </h5>
+                                <h2 class="card-text" id="active-users">-</h2>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card security-card success">
+                            <div class="card-body">
+                                <h5 class="card-title">
+                                    <i class="fas fa-shield-check"></i> Compliance Score
+                                </h5>
+                                <h2 class="card-text compliance-score" id="compliance-score">-</h2>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Data Loss Prevention Tool -->
+                <div class="dlp-tool">
+                    <h4><i class="fas fa-search"></i> Data Loss Prevention Checker</h4>
+                    <div class="row">
+                        <div class="col-md-8">
+                            <textarea class="form-control" id="dlp-text" rows="4" placeholder="Enter text to check for sensitive data (emails, phone numbers, SSN, credit cards, IP addresses)..."></textarea>
+                        </div>
+                        <div class="col-md-4">
+                            <button class="btn btn-light btn-block mb-2" onclick="checkDLP()">
+                                <i class="fas fa-search"></i> Check for Sensitive Data
+                            </button>
+                            <button class="btn btn-light btn-block" onclick="maskData()">
+                                <i class="fas fa-eye-slash"></i> Mask Sensitive Data
+                            </button>
+                        </div>
+                    </div>
+                    <div id="dlp-results" class="mt-3"></div>
+                </div>
+
+                <!-- Cache and Load Balancer Status -->
+                <div class="row mb-4">
+                    <div class="col-md-6">
+                        <div class="card">
                             <div class="card-header">
-                                <h5><i class="fas fa-exclamation-triangle"></i> Recent Security Events</h5>
+                                <h5><i class="fas fa-database"></i> Cache Status</h5>
+                            </div>
+                            <div class="card-body">
+                                <div id="cache-status">
+                                    <span class="cache-status cache-offline"></span>
+                                    <span>Checking cache status...</span>
+                                </div>
+                                <div class="mt-2">
+                                    <button class="btn btn-sm btn-outline-primary" onclick="clearCache()">
+                                        <i class="fas fa-trash"></i> Clear Cache
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5><i class="fas fa-balance-scale"></i> Load Balancer Health</h5>
+                            </div>
+                            <div class="card-body">
+                                <div id="lb-status">
+                                    <span>Checking load balancer status...</span>
+                                </div>
+                                <div class="mt-2">
+                                    <button class="btn btn-sm btn-outline-info" onclick="checkLBHealth()">
+                                        <i class="fas fa-heartbeat"></i> Health Check
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Security Charts -->
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5><i class="fas fa-chart-bar"></i> Security Events by Type</h5>
+                            </div>
+                            <div class="card-body">
+                                <canvas id="securityChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5><i class="fas fa-chart-line"></i> Security Timeline</h5>
+                            </div>
+                            <div class="card-body">
+                                <canvas id="timelineChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Recent Security Events -->
+                <div class="row mt-4">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5><i class="fas fa-list"></i> Recent Security Events</h5>
                             </div>
                             <div class="card-body">
                                 <div class="table-responsive">
-                                    <table class="table table-hover event-table">
+                                    <table class="table table-striped" id="security-events-table">
                                         <thead>
                                             <tr>
                                                 <th>Timestamp</th>
                                                 <th>Event Type</th>
                                                 <th>Severity</th>
                                                 <th>Source IP</th>
-                                                <th>Username</th>
                                                 <th>Details</th>
-                                                <th>Status</th>
                                             </tr>
                                         </thead>
-                                        <tbody id="security-events-table">
+                                        <tbody>
                                             <tr>
-                                                <td colspan="7" class="text-center">Loading security events...</td>
-                                            </tr>
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <!-- User Activity -->
-                        <div class="security-card">
-                            <div class="card-header">
-                                <h5><i class="fas fa-users"></i> User Activity</h5>
-                            </div>
-                            <div class="card-body">
-                                <div class="table-responsive">
-                                    <table class="table table-hover event-table">
-                                        <thead>
-                                            <tr>
-                                                <th>Username</th>
-                                                <th>Role</th>
-                                                <th>Last Login</th>
-                                                <th>Total Actions</th>
-                                                <th>Failed Actions</th>
-                                                <th>Status</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody id="user-activity-table">
-                                            <tr>
-                                                <td colspan="6" class="text-center">Loading user activity...</td>
+                                                <td colspan="5" class="text-center">Loading security events...</td>
                                             </tr>
                                         </tbody>
                                     </table>
@@ -224,54 +256,113 @@
                         </div>
                     </div>
                 </div>
-            </div>
+
+                <!-- User Activity -->
+                <div class="row mt-4">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5><i class="fas fa-user-clock"></i> User Activity</h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="table-responsive">
+                                    <table class="table table-striped" id="user-activity-table">
+                                        <thead>
+                                            <tr>
+                                                <th>User</th>
+                                                <th>Action</th>
+                                                <th>Resource</th>
+                                                <th>IP Address</th>
+                                                <th>Timestamp</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr>
+                                                <td colspan="5" class="text-center">Loading user activity...</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </main>
         </div>
     </div>
-    
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        // Security Dashboard JavaScript
-        let securityChart, timelineChart;
-        
-        // Initialize charts
-        function initCharts() {
-            const securityCtx = document.getElementById('securityChart').getContext('2d');
-            securityChart = new Chart(securityCtx, {
-                type: 'doughnut',
-                data: {
-                    labels: ['Login Failed', 'Rate Limit', 'Unauthorized Access', 'Suspicious Activity'],
-                    datasets: [{
-                        data: [0, 0, 0, 0],
-                        backgroundColor: ['#dc3545', '#fd7e14', '#ffc107', '#6f42c1']
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            position: 'bottom'
-                        }
-                    }
-                }
-            });
+        // Global variables
+        let securityChart = null;
+        let timelineChart = null;
+
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', function() {
+            loadSecurityData();
+            checkCacheStatus();
+            checkLBHealth();
+            setInterval(loadSecurityData, 30000); // Refresh every 30 seconds
+        });
+
+        function loadSecurityData() {
+            // Load security events
+            fetch('/api/security/events')
+                .then(response => response.json())
+                .then(data => {
+                    updateSecurityMetrics(data);
+                    updateSecurityChart(data);
+                    updateSecurityEventsTable(data.events || []);
+                })
+                .catch(error => {
+                    console.error('Error loading security data:', error);
+                });
+
+            // Load audit summary
+            fetch('/api/security/audit/summary')
+                .then(response => response.json())
+                .then(data => {
+                    updateUserActivityTable(data);
+                })
+                .catch(error => {
+                    console.error('Error loading audit summary:', error);
+                });
+        }
+
+        function updateSecurityMetrics(data) {
+            const metrics = data.metrics || {};
+            document.getElementById('critical-events').textContent = metrics.critical || 0;
+            document.getElementById('high-events').textContent = metrics.high || 0;
+            document.getElementById('medium-events').textContent = metrics.medium || 0;
+            document.getElementById('low-events').textContent = metrics.low || 0;
+            document.getElementById('active-users').textContent = data.active_users || 0;
+        }
+
+        function updateSecurityChart(data) {
+            const ctx = document.getElementById('securityChart').getContext('2d');
             
-            const timelineCtx = document.getElementById('timelineChart').getContext('2d');
-            timelineChart = new Chart(timelineCtx, {
-                type: 'line',
+            if (securityChart) {
+                securityChart.destroy();
+            }
+
+            const chartData = data.chart_data || {};
+            securityChart = new Chart(ctx, {
+                type: 'bar',
                 data: {
-                    labels: [],
+                    labels: Object.keys(chartData),
                     datasets: [{
                         label: 'Security Events',
-                        data: [],
-                        borderColor: '#dc3545',
-                        backgroundColor: 'rgba(220, 53, 69, 0.1)',
-                        tension: 0.4
+                        data: Object.values(chartData),
+                        backgroundColor: [
+                            '#dc3545',
+                            '#ffc107',
+                            '#17a2b8',
+                            '#28a745'
+                        ]
                     }]
                 },
                 options: {
                     responsive: true,
-                    maintainAspectRatio: false,
                     scales: {
                         y: {
                             beginAtZero: true
@@ -280,79 +371,241 @@
                 }
             });
         }
-        
-        // Load security data
-        async function loadSecurityData() {
-            try {
-                const response = await fetch('/api/security/events');
-                const data = await response.json();
-                
-                if (data.status === 'success') {
-                    updateSecurityMetrics(data.data);
-                    updateSecurityChart(data.data);
-                    updateSecurityEventsTable(data.data.events);
-                }
-            } catch (error) {
-                console.error('Error loading security data:', error);
-            }
-        }
-        
-        // Update security metrics
-        function updateSecurityMetrics(data) {
-            document.getElementById('critical-events').textContent = data.metrics.critical || 0;
-            document.getElementById('high-events').textContent = data.metrics.high || 0;
-            document.getElementById('medium-events').textContent = data.metrics.medium || 0;
-            document.getElementById('low-events').textContent = data.metrics.low || 0;
-            document.getElementById('total-users').textContent = data.metrics.active_users || 0;
-            document.getElementById('failed-logins').textContent = data.metrics.failed_logins || 0;
-        }
-        
-        // Update security chart
-        function updateSecurityChart(data) {
-            if (securityChart) {
-                securityChart.data.datasets[0].data = [
-                    data.chart_data.login_failed || 0,
-                    data.chart_data.rate_limit || 0,
-                    data.chart_data.unauthorized || 0,
-                    data.chart_data.suspicious || 0
-                ];
-                securityChart.update();
-            }
-        }
-        
-        // Update security events table
+
         function updateSecurityEventsTable(events) {
-            const tbody = document.getElementById('security-events-table');
+            const tbody = document.querySelector('#security-events-table tbody');
             tbody.innerHTML = '';
-            
+
             if (events.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="7" class="text-center">No security events found</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center">No security events found</td></tr>';
                 return;
             }
-            
+
             events.forEach(event => {
                 const row = document.createElement('tr');
                 row.innerHTML = `
                     <td>${new Date(event.timestamp).toLocaleString()}</td>
-                    <td>${event.event_type}</td>
-                    <td><span class="severity-badge severity-${event.severity}">${event.severity}</span></td>
+                    <td><span class="badge bg-secondary">${event.event_type}</span></td>
+                    <td><span class="badge bg-${getSeverityColor(event.severity)}">${event.severity}</span></td>
                     <td>${event.source_ip || '-'}</td>
-                    <td>${event.username || '-'}</td>
                     <td>${event.details || '-'}</td>
-                    <td>${event.resolved ? '<span class="badge bg-success">Resolved</span>' : '<span class="badge bg-warning">Open</span>'}</td>
                 `;
                 tbody.appendChild(row);
             });
         }
-        
-        // Initialize dashboard
-        document.addEventListener('DOMContentLoaded', function() {
-            initCharts();
+
+        function updateUserActivityTable(data) {
+            const tbody = document.querySelector('#user-activity-table tbody');
+            tbody.innerHTML = '';
+
+            const activities = data.recent_activities || [];
+            if (activities.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center">No user activity found</td></tr>';
+                return;
+            }
+
+            activities.forEach(activity => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${activity.username}</td>
+                    <td>${activity.action}</td>
+                    <td>${activity.resource || '-'}</td>
+                    <td>${activity.ip_address || '-'}</td>
+                    <td>${new Date(activity.timestamp).toLocaleString()}</td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        function getSeverityColor(severity) {
+            switch (severity.toLowerCase()) {
+                case 'critical': return 'danger';
+                case 'high': return 'warning';
+                case 'medium': return 'info';
+                case 'low': return 'success';
+                default: return 'secondary';
+            }
+        }
+
+        function checkDLP() {
+            const text = document.getElementById('dlp-text').value;
+            if (!text.trim()) {
+                alert('Please enter text to check');
+                return;
+            }
+
+            fetch('/api/security/dlp/check', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ text: text })
+            })
+            .then(response => response.json())
+            .then(data => {
+                const resultsDiv = document.getElementById('dlp-results');
+                let html = '<div class="alert alert-info">';
+                
+                if (data.violation) {
+                    html = '<div class="alert alert-danger">';
+                    html += '<h6><i class="fas fa-exclamation-triangle"></i> Sensitive Data Detected!</h6>';
+                    html += '<ul>';
+                    Object.entries(data.findings).forEach(([type, info]) => {
+                        html += `<li><strong>${type}:</strong> ${info.count} instances found</li>`;
+                    });
+                    html += '</ul>';
+                } else {
+                    html += '<i class="fas fa-check-circle"></i> No sensitive data detected';
+                }
+                
+                html += '</div>';
+                resultsDiv.innerHTML = html;
+            })
+            .catch(error => {
+                console.error('Error checking DLP:', error);
+                alert('Error checking for sensitive data');
+            });
+        }
+
+        function maskData() {
+            const text = document.getElementById('dlp-text').value;
+            if (!text.trim()) {
+                alert('Please enter text to mask');
+                return;
+            }
+
+            fetch('/api/security/mask', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ text: text })
+            })
+            .then(response => response.json())
+            .then(data => {
+                const resultsDiv = document.getElementById('dlp-results');
+                let html = '<div class="alert alert-info">';
+                html += '<h6><i class="fas fa-eye-slash"></i> Masked Text:</h6>';
+                html += `<pre class="bg-light p-2">${data.masked_text}</pre>`;
+                
+                if (Object.keys(data.findings).length > 0) {
+                    html += '<h6>Detected Patterns:</h6><ul>';
+                    Object.entries(data.findings).forEach(([type, info]) => {
+                        html += `<li><strong>${type}:</strong> ${info.count} instances masked</li>`;
+                    });
+                    html += '</ul>';
+                }
+                
+                html += '</div>';
+                resultsDiv.innerHTML = html;
+            })
+            .catch(error => {
+                console.error('Error masking data:', error);
+                alert('Error masking sensitive data');
+            });
+        }
+
+        function checkCacheStatus() {
+            fetch('/api/security/cache/status')
+                .then(response => response.json())
+                .then(data => {
+                    const statusDiv = document.getElementById('cache-status');
+                    const statusSpan = statusDiv.querySelector('span');
+                    const statusDot = statusDiv.querySelector('.cache-status');
+                    
+                    if (data.online) {
+                        statusDot.className = 'cache-status cache-online';
+                        statusSpan.textContent = 'Cache is online';
+                    } else {
+                        statusDot.className = 'cache-status cache-offline';
+                        statusSpan.textContent = 'Cache is offline';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error checking cache status:', error);
+                    const statusDiv = document.getElementById('cache-status');
+                    const statusDot = statusDiv.querySelector('.cache-status');
+                    statusDot.className = 'cache-status cache-offline';
+                    statusDiv.querySelector('span').textContent = 'Cache status unknown';
+                });
+        }
+
+        function checkLBHealth() {
+            fetch('/health/lb')
+                .then(response => response.json())
+                .then(data => {
+                    const statusDiv = document.getElementById('lb-status');
+                    let html = `<span class="badge bg-${data.status === 'healthy' ? 'success' : 'danger'}">${data.status}</span>`;
+                    html += '<br><small class="text-muted">';
+                    Object.entries(data.checks || {}).forEach(([check, status]) => {
+                        html += `${check}: ${status ? '✓' : '✗'}<br>`;
+                    });
+                    html += '</small>';
+                    statusDiv.innerHTML = html;
+                })
+                .catch(error => {
+                    console.error('Error checking LB health:', error);
+                    document.getElementById('lb-status').innerHTML = '<span class="text-danger">Health check failed</span>';
+                });
+        }
+
+        function clearCache() {
+            if (confirm('Are you sure you want to clear the cache?')) {
+                fetch('/api/security/cache/clear', { method: 'POST' })
+                    .then(response => response.json())
+                    .then(data => {
+                        alert('Cache cleared successfully');
+                        checkCacheStatus();
+                    })
+                    .catch(error => {
+                        console.error('Error clearing cache:', error);
+                        alert('Error clearing cache');
+                    });
+            }
+        }
+
+        function generateComplianceReport() {
+            fetch('/api/compliance/report')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        alert('Error generating compliance report: ' + data.error);
+                        return;
+                    }
+                    
+                    // Update compliance score
+                    document.getElementById('compliance-score').textContent = data.compliance_score + '%';
+                    
+                    // Show report details
+                    let reportHtml = '<div class="alert alert-info">';
+                    reportHtml += '<h6>Compliance Report Generated</h6>';
+                    reportHtml += `<p><strong>Score:</strong> ${data.compliance_score}%</p>`;
+                    reportHtml += `<p><strong>Total Events:</strong> ${data.total_events}</p>`;
+                    
+                    if (data.recommendations && data.recommendations.length > 0) {
+                        reportHtml += '<h6>Recommendations:</h6><ul>';
+                        data.recommendations.forEach(rec => {
+                            reportHtml += `<li>${rec}</li>`;
+                        });
+                        reportHtml += '</ul>';
+                    }
+                    
+                    reportHtml += '</div>';
+                    
+                    // Show in a modal or alert
+                    alert('Compliance report generated successfully. Score: ' + data.compliance_score + '%');
+                })
+                .catch(error => {
+                    console.error('Error generating compliance report:', error);
+                    alert('Error generating compliance report');
+                });
+        }
+
+        function refreshSecurityData() {
             loadSecurityData();
-            
-            // Refresh data every 30 seconds
-            setInterval(loadSecurityData, 30000);
-        });
+            checkCacheStatus();
+            checkLBHealth();
+        }
     </script>
 </body>
 </html> 

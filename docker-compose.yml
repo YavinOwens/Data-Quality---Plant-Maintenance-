@@ -65,14 +65,10 @@ services:
 
   # Logging & Reporting Service
   logging-service:
-    build:
-      context: ./logging-service
-      dockerfile: Dockerfile
+    build: ./logging-service
     container_name: logging-service
-    depends_on:
-      postgres:
-        condition: service_started
-        required: true
+    ports:
+      - "8080:8080"
     environment:
       - DB_HOST=${DB_HOST:-postgres}
       - DB_NAME=${DB_NAME:-sap_data_quality}
@@ -85,20 +81,26 @@ services:
       - RATE_LIMIT_ENABLED=true
       - AUDIT_LOGGING_ENABLED=true
       - SECURITY_MONITORING_ENABLED=true
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
-      timeout: 10s
-      interval: 30s
-      retries: 3
+      - CACHE_ENABLED=true
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+      - LOAD_BALANCER_ENABLED=true
+    volumes:
+      - ./logging-service:/app
+      - ./data:/app/data
+    depends_on:
+      - postgres
+      - redis
     networks:
       - sap-network
     restart: unless-stopped
-    volumes:
-      - ./data:/app/data
-      - ./logs:/app/logs
-      - ./config:/app/config
-    ports:
-      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health/lb"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
   # Orchestrator (Airflow)
   orchestrator:
