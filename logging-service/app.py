@@ -8,6 +8,7 @@ import os
 import json
 import logging
 import sys
+import requests
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any
 from pathlib import Path
@@ -74,6 +75,10 @@ class DataQualityReporter:
         self.db_engine = create_engine(
             f"postgresql://{self.db_user}:{self.db_password}@{self.db_host}:5432/{self.db_name}"
         )
+        
+        # Ollama configuration
+        self.ollama_url = os.getenv('OLLAMA_URL', 'http://localhost:11434')
+        self.ollama_model = os.getenv('OLLAMA_MODEL', 'phi3')
     
     def get_validation_summary(self, days: int = 30) -> Dict[str, Any]:
         """Get validation summary for the last N days"""
@@ -82,16 +87,15 @@ class DataQualityReporter:
             
             query = text("""
                 SELECT 
-                    validation_type as dataset_name,
-                    validation_name as rule_name,
-                    COUNT(*) as count,
-                    AVG(success_rate) as success_rate,
-                    SUM(passed_records) as total_passed,
-                    SUM(failed_records) as total_failed
+                    dataset_name,
+                    rule_name,
+                    status,
+                    results,
+                    COUNT(*) as count
                 FROM validation_results 
                 WHERE created_at >= :since_date
-                GROUP BY validation_type, validation_name
-                ORDER BY validation_type, validation_name
+                GROUP BY dataset_name, rule_name, status, results
+                ORDER BY dataset_name, rule_name
             """)
             
             with self.db_engine.connect() as conn:
@@ -110,13 +114,21 @@ class DataQualityReporter:
                         'rules': {}
                     }
                 
+                # Parse the JSON results
+                results = json.loads(row.results) if isinstance(row.results, str) else row.results
+                success_rate = results.get('success_rate', 0.0)
+                passed_records = results.get('passed_records', 0)
+                failed_records = results.get('failed_records', 0)
+                total_records = results.get('total_records', 0)
+                
                 summary[dataset]['total_validations'] += row.count
-                summary[dataset]['passed_validations'] += row._mapping['total_passed'] or 0
-                summary[dataset]['failed_validations'] += row._mapping['total_failed'] or 0
+                if row.status == 'passed':
+                    summary[dataset]['passed_validations'] += row.count
+                else:
+                    summary[dataset]['failed_validations'] += row.count
                 
                 # Convert Decimal to float for JSON serialization
-                success_rate = float(row.success_rate) if hasattr(row.success_rate, '__float__') else row.success_rate
-                summary[dataset]['avg_success_rate'] = success_rate
+                success_rate = float(success_rate) if hasattr(success_rate, '__float__') else success_rate
                 
                 if row.rule_name not in summary[dataset]['rules']:
                     summary[dataset]['rules'][row.rule_name] = {
@@ -128,26 +140,22 @@ class DataQualityReporter:
                     }
                 
                 summary[dataset]['rules'][row.rule_name]['total'] += row.count
-                summary[dataset]['rules'][row.rule_name]['passed'] += row.total_passed or 0
-                summary[dataset]['rules'][row.rule_name]['failed'] += row.total_failed or 0
+                if row.status == 'passed':
+                    summary[dataset]['rules'][row.rule_name]['passed'] += row.count
+                else:
+                    summary[dataset]['rules'][row.rule_name]['failed'] += row.count
                 summary[dataset]['rules'][row.rule_name]['avg_success_rate'] = success_rate
             
             # Calculate success rates using actual database values
             for dataset in summary.values():
                 if dataset['total_validations'] > 0:
-                    # Use the actual success_rate from database, not calculated from passed/failed counts
-                    avg_rate = dataset.get('avg_success_rate', 0)
-                    if hasattr(avg_rate, '__float__'):
-                        avg_rate = float(avg_rate)
-                    dataset['success_rate'] = avg_rate * 100
+                    # Calculate overall success rate
+                    dataset['success_rate'] = (dataset['passed_validations'] / dataset['total_validations']) * 100
                 
                 for rule in dataset['rules'].values():
                     if rule['total'] > 0:
-                        # Use the actual success_rate from database
-                        avg_rate = rule.get('avg_success_rate', 0)
-                        if hasattr(avg_rate, '__float__'):
-                            avg_rate = float(avg_rate)
-                        rule['success_rate'] = avg_rate * 100
+                        # Calculate rule success rate
+                        rule['success_rate'] = (rule['passed'] / rule['total']) * 100
             
             return summary
             
@@ -161,10 +169,10 @@ class DataQualityReporter:
             query = text("""
                 SELECT 
                     id,
-                    validation_type as dataset_name,
-                    validation_name as rule_name,
-                    CASE WHEN success_rate >= 0.95 THEN 'passed' ELSE 'failed' END as status,
-                    error_details as results,
+                    dataset_name,
+                    rule_name,
+                    status,
+                    results,
                     created_at
                 FROM validation_results 
                 ORDER BY created_at DESC
@@ -183,9 +191,15 @@ class DataQualityReporter:
             for row in rows:
                 print(f"DEBUG: Processing row {row.id}: {row.dataset_name} - {row.status}", file=sys.stderr)
                 try:
-                    # Simplified processing - just use the raw results
-                    issues_list = [row.results] if row.results else []
-                    metrics = {}
+                    # Parse the JSON results
+                    results = json.loads(row.results) if isinstance(row.results, str) else row.results
+                    issues_list = [results.get('error_details', 'No details available')] if results else []
+                    metrics = {
+                        'success_rate': results.get('success_rate', 0.0),
+                        'total_records': results.get('total_records', 0),
+                        'passed_records': results.get('passed_records', 0),
+                        'failed_records': results.get('failed_records', 0)
+                    }
                     
                     issue_data = {
                         'id': row.id,
@@ -220,12 +234,12 @@ class DataQualityReporter:
             query = text("""
                 SELECT 
                     DATE(created_at) as date,
-                    validation_type as dataset_name,
-                    CASE WHEN success_rate >= 0.95 THEN 'passed' ELSE 'failed' END as status,
+                    dataset_name,
+                    status,
                     COUNT(*) as count
                 FROM validation_results 
                 WHERE created_at >= :since_date
-                GROUP BY DATE(created_at), validation_type, CASE WHEN success_rate >= 0.95 THEN 'passed' ELSE 'failed' END
+                GROUP BY DATE(created_at), dataset_name, status
                 ORDER BY date, dataset_name, status
             """)
             
@@ -297,6 +311,88 @@ class DataQualityReporter:
             return {
                 'error': str(e),
                 'generated_at': datetime.utcnow().isoformat()
+            }
+    
+    def get_all_data_context(self) -> Dict[str, Any]:
+        """Get all data quality context for the chatbot"""
+        try:
+            context = {
+                'validation_summary': self.get_validation_summary(30),
+                'recent_issues': self.get_recent_issues(20),
+                'quality_trends': self.get_quality_trends(30),
+                'current_time': datetime.utcnow().isoformat()
+            }
+            return context
+        except Exception as e:
+            logger.error(f"Failed to get data context: {str(e)}")
+            return {}
+    
+    def chat_with_ollama(self, user_message: str) -> Dict[str, Any]:
+        """Send message to Ollama and get response with data context"""
+        try:
+            # Get all data quality context
+            data_context = self.get_all_data_context()
+            
+            # Debug: Print the data context
+            logger.info(f"Data context keys: {list(data_context.keys())}")
+            logger.info(f"Validation summary keys: {list(data_context.get('validation_summary', {}).keys())}")
+            
+            # Create system prompt with context
+            system_prompt = f"""You are a Data Quality Assistant. The current data quality metrics are: Equipment Accuracy {data_context['validation_summary'].get('equipment_accuracy', {}).get('success_rate', 0):.1f}%, Equipment Completeness {data_context['validation_summary'].get('equipment_completeness', {}).get('success_rate', 0):.1f}%, Maintenance Orders Timeliness {data_context['validation_summary'].get('maintenance_orders_timeliness', {}).get('success_rate', 0):.1f}%, Cross Reference Consistency {data_context['validation_summary'].get('cross_reference_consistency', {}).get('success_rate', 0):.1f}%. There are {len(data_context['recent_issues'])} recent validation runs. When asked about data quality status, respond with these specific metrics."""
+            
+            logger.info(f"System prompt: {system_prompt}")
+
+            # Prepare the request to Ollama
+            # Include data context in the user message for better response
+            enhanced_message = f"""Data Quality Metrics: Equipment Accuracy {data_context['validation_summary'].get('equipment_accuracy', {}).get('success_rate', 0):.1f}%, Equipment Completeness {data_context['validation_summary'].get('equipment_completeness', {}).get('success_rate', 0):.1f}%, Maintenance Orders Timeliness {data_context['validation_summary'].get('maintenance_orders_timeliness', {}).get('success_rate', 0):.1f}%, Cross Reference Consistency {data_context['validation_summary'].get('cross_reference_consistency', {}).get('success_rate', 0):.1f}%. Recent validation runs: {len(data_context['recent_issues'])}.
+
+User question: {user_message}"""
+            
+            ollama_request = {
+                "model": self.ollama_model,
+                "messages": [
+                    {"role": "system", "content": "You are a Data Quality Assistant. Answer questions about data quality using the provided metrics."},
+                    {"role": "user", "content": enhanced_message}
+                ],
+                "stream": False
+            }
+            
+            # Send request to Ollama
+            response = requests.post(
+                f"{self.ollama_url}/api/chat",
+                json=ollama_request,
+                timeout=30
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                return {
+                    'status': 'success',
+                    'response': result.get('message', {}).get('content', 'No response received'),
+                    'model': self.ollama_model,
+                    'timestamp': datetime.utcnow().isoformat()
+                }
+            else:
+                logger.error(f"Ollama request failed: {response.status_code} - {response.text}")
+                return {
+                    'status': 'error',
+                    'message': f'Ollama service error: {response.status_code}',
+                    'timestamp': datetime.utcnow().isoformat()
+                }
+                
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Ollama connection error: {str(e)}")
+            return {
+                'status': 'error',
+                'message': f'Ollama service unavailable: {str(e)}',
+                'timestamp': datetime.utcnow().isoformat()
+            }
+        except Exception as e:
+            logger.error(f"Chat error: {str(e)}")
+            return {
+                'status': 'error',
+                'message': f'Internal error: {str(e)}',
+                'timestamp': datetime.utcnow().isoformat()
             }
 
 # Initialize reporter
@@ -384,6 +480,39 @@ class QualityReportResource(Resource):
 api.add_resource(ValidationSummaryResource, '/api/validation-summary')
 api.add_resource(RecentIssuesResource, '/api/recent-issues')
 api.add_resource(QualityReportResource, '/api/quality-report')
+
+# Chat API endpoint
+@app.route('/api/chat', methods=['POST'])
+def chat():
+    """Chat with Ollama AI assistant"""
+    REQUEST_COUNT.labels(endpoint='chat').inc()
+    
+    try:
+        data = request.get_json()
+        if not data or 'message' not in data:
+            return jsonify({
+                'status': 'error',
+                'message': 'Message is required'
+            }), 400
+        
+        user_message = data['message']
+        if not user_message.strip():
+            return jsonify({
+                'status': 'error',
+                'message': 'Message cannot be empty'
+            }), 400
+        
+        # Get response from Ollama
+        response = reporter.chat_with_ollama(user_message)
+        
+        return jsonify(response)
+        
+    except Exception as e:
+        logger.error(f"Chat endpoint error: {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'message': f'Internal error: {str(e)}'
+        }), 500
 
 # Web Routes
 @app.route('/')

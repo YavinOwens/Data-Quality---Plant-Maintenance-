@@ -15,9 +15,9 @@ def generate_historical_validations():
     """Generate validation results for the last 30 days"""
     print("📊 Generating historical validation data...")
     
-    # Database connection
+    # Database connection - updated for Docker containers
     db_config = {
-        'host': 'localhost',
+        'host': 'sap-postgres',  # Docker service name
         'port': 5432,
         'database': 'sap_data_quality',
         'user': 'sap_user',
@@ -49,49 +49,61 @@ def generate_historical_validations():
             # Create validation results for this date
             validations = [
                 {
-                    'validation_type': 'equipment_completeness',
-                    'validation_name': 'equipment_completeness_validation',
-                    'success_rate': equipment_completeness_rate,
-                    'total_records': random.randint(50, 100),
-                    'passed_records': int(random.randint(50, 100) * equipment_completeness_rate),
-                    'failed_records': int(random.randint(50, 100) * (1 - equipment_completeness_rate)),
-                    'error_details': 'Historical data generation',
+                    'dataset_name': 'equipment_data',
+                    'rule_name': 'equipment_completeness_validation',
+                    'status': 'passed' if equipment_completeness_rate > 0.8 else 'failed',
+                    'results': {
+                        'success_rate': equipment_completeness_rate,
+                        'total_records': random.randint(50, 100),
+                        'passed_records': int(random.randint(50, 100) * equipment_completeness_rate),
+                        'failed_records': int(random.randint(50, 100) * (1 - equipment_completeness_rate)),
+                        'error_details': 'Historical data generation'
+                    },
                     'created_at': target_date.replace(hour=random.randint(9, 17), 
                                                     minute=random.randint(0, 59),
                                                     second=random.randint(0, 59))
                 },
                 {
-                    'validation_type': 'equipment_accuracy',
-                    'validation_name': 'equipment_accuracy_validation',
-                    'success_rate': equipment_accuracy_rate,
-                    'total_records': random.randint(50, 100),
-                    'passed_records': int(random.randint(50, 100) * equipment_accuracy_rate),
-                    'failed_records': int(random.randint(50, 100) * (1 - equipment_accuracy_rate)),
-                    'error_details': 'Historical data generation',
+                    'dataset_name': 'equipment_data',
+                    'rule_name': 'equipment_accuracy_validation',
+                    'status': 'passed' if equipment_accuracy_rate > 0.8 else 'failed',
+                    'results': {
+                        'success_rate': equipment_accuracy_rate,
+                        'total_records': random.randint(50, 100),
+                        'passed_records': int(random.randint(50, 100) * equipment_accuracy_rate),
+                        'failed_records': int(random.randint(50, 100) * (1 - equipment_accuracy_rate)),
+                        'error_details': 'Historical data generation'
+                    },
                     'created_at': target_date.replace(hour=random.randint(9, 17), 
                                                     minute=random.randint(0, 59),
                                                     second=random.randint(0, 59))
                 },
                 {
-                    'validation_type': 'maintenance_orders_timeliness',
-                    'validation_name': 'maintenance_orders_timeliness_validation',
-                    'success_rate': maintenance_timeliness_rate,
-                    'total_records': random.randint(30, 80),
-                    'passed_records': int(random.randint(30, 80) * maintenance_timeliness_rate),
-                    'failed_records': int(random.randint(30, 80) * (1 - maintenance_timeliness_rate)),
-                    'error_details': 'Historical data generation',
+                    'dataset_name': 'maintenance_orders',
+                    'rule_name': 'maintenance_orders_timeliness_validation',
+                    'status': 'passed' if maintenance_timeliness_rate > 0.8 else 'failed',
+                    'results': {
+                        'success_rate': maintenance_timeliness_rate,
+                        'total_records': random.randint(30, 80),
+                        'passed_records': int(random.randint(30, 80) * maintenance_timeliness_rate),
+                        'failed_records': int(random.randint(30, 80) * (1 - maintenance_timeliness_rate)),
+                        'error_details': 'Historical data generation'
+                    },
                     'created_at': target_date.replace(hour=random.randint(9, 17), 
                                                     minute=random.randint(0, 59),
                                                     second=random.randint(0, 59))
                 },
                 {
-                    'validation_type': 'cross_reference_consistency',
-                    'validation_name': 'cross_reference_consistency_validation',
-                    'success_rate': cross_reference_rate,
-                    'total_records': random.randint(40, 90),
-                    'passed_records': int(random.randint(40, 90) * cross_reference_rate),
-                    'failed_records': int(random.randint(40, 90) * (1 - cross_reference_rate)),
-                    'error_details': 'Historical data generation',
+                    'dataset_name': 'cross_reference_data',
+                    'rule_name': 'cross_reference_consistency_validation',
+                    'status': 'passed' if cross_reference_rate > 0.8 else 'failed',
+                    'results': {
+                        'success_rate': cross_reference_rate,
+                        'total_records': random.randint(40, 90),
+                        'passed_records': int(random.randint(40, 90) * cross_reference_rate),
+                        'failed_records': int(random.randint(40, 90) * (1 - cross_reference_rate)),
+                        'error_details': 'Historical data generation'
+                    },
                     'created_at': target_date.replace(hour=random.randint(9, 17), 
                                                     minute=random.randint(0, 59),
                                                     second=random.randint(0, 59))
@@ -103,24 +115,21 @@ def generate_historical_validations():
                 try:
                     cursor.execute("""
                         INSERT INTO validation_results 
-                        (validation_type, validation_name, success_rate, total_records, 
-                         passed_records, failed_records, error_details, created_at)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        (dataset_name, rule_name, status, results, created_at, updated_at)
+                        VALUES (%s, %s, %s, %s, %s, %s)
                     """, (
-                        validation['validation_type'],
-                        validation['validation_name'],
-                        validation['success_rate'],
-                        validation['total_records'],
-                        validation['passed_records'],
-                        validation['failed_records'],
-                        json.dumps([validation['error_details']]),
-                        validation['created_at']
+                        validation['dataset_name'],
+                        validation['rule_name'],
+                        validation['status'],
+                        json.dumps(validation['results']),
+                        validation['created_at'],
+                        validation['created_at']  # updated_at same as created_at
                     ))
                     
-                    print(f"  ✅ Saved {validation['validation_type']} for {target_date.strftime('%Y-%m-%d')}")
+                    print(f"  ✅ Saved {validation['rule_name']} for {target_date.strftime('%Y-%m-%d')}")
                     
                 except Exception as e:
-                    print(f"  ❌ Error saving {validation['validation_type']}: {str(e)}")
+                    print(f"  ❌ Error saving {validation['rule_name']}: {str(e)}")
             
             # Commit after each day
             conn.commit()
@@ -140,7 +149,7 @@ def main():
     # Check if services are running
     try:
         # Check validation engine
-        response = requests.get('http://localhost:8001/health')
+        response = requests.get('http://validation-engine:8001/health')  # Updated hostname
         if response.status_code != 200:
             print("❌ Validation engine is not running")
             return
