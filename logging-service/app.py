@@ -1931,7 +1931,14 @@ def get_information_metrics():
             'quality_score': 87.3,
             'active_issues': 15,
             'completion_rate': 84.4,
-            'overdue_tasks': 3
+            'overdue_tasks': 3,
+            'dmbok2_maturity': 'Level 3 (Defined)',
+            'data_governance_score': 87.5,
+            'data_architecture_score': 91.2,
+            'data_modeling_score': 84.6,
+            'data_quality_score': 86.8,
+            'data_security_score': 93.4,
+            'data_lifecycle_score': 79.3
         }
         return jsonify(metrics)
     except Exception as e:
@@ -2472,6 +2479,171 @@ def chat():
             'status': 'error',
             'message': 'Failed to process chat request'
         }), 500
+
+@app.route('/api/reports/data-management', methods=['POST'])
+@login_required
+@limiter.limit("20 per hour")
+def generate_data_management_report():
+    """Generate comprehensive data management report based on DMBOK2 framework"""
+    try:
+        data = request.get_json()
+        report_type = data.get('report_type', 'data_management_analysis')
+        include_dmbok2 = data.get('include_dmbok2', True)
+        format_type = data.get('format', 'pdf')
+        
+        # Generate comprehensive data management report based on DMBOK2
+        report_data = {
+            'title': 'Data Management Report (DMBOK2 Framework)',
+            'generated_at': datetime.utcnow().isoformat(),
+            'period': 'Last 30 Days',
+            'framework': 'DMBOK2 (Data Management Body of Knowledge)',
+            'dmbok2_components': {
+                'data_governance': {
+                    'score': 87.5,
+                    'status': 'Good',
+                    'metrics': {
+                        'policy_adherence': 92.3,
+                        'stewardship_coverage': 85.7,
+                        'compliance_score': 89.1
+                    },
+                    'areas': [
+                        'Data Strategy Alignment',
+                        'Data Policy Management',
+                        'Data Stewardship Program',
+                        'Data Quality Governance'
+                    ]
+                },
+                'data_architecture': {
+                    'score': 91.2,
+                    'status': 'Excellent',
+                    'metrics': {
+                        'architecture_maturity': 94.5,
+                        'integration_coverage': 88.9,
+                        'scalability_score': 93.1
+                    },
+                    'areas': [
+                        'Data Modeling Standards',
+                        'Integration Architecture',
+                        'Data Flow Management',
+                        'Technology Stack Alignment'
+                    ]
+                },
+                'data_modeling': {
+                    'score': 84.6,
+                    'status': 'Good',
+                    'metrics': {
+                        'model_consistency': 87.2,
+                        'documentation_quality': 82.1,
+                        'version_control': 89.3
+                    },
+                    'areas': [
+                        'Conceptual Data Modeling',
+                        'Logical Data Modeling',
+                        'Physical Data Modeling',
+                        'Data Dictionary Management'
+                    ]
+                },
+                'data_quality': {
+                    'score': 86.8,
+                    'status': 'Good',
+                    'metrics': {
+                        'completeness_score': 89.4,
+                        'accuracy_score': 84.7,
+                        'consistency_score': 88.2,
+                        'timeliness_score': 85.1
+                    },
+                    'areas': [
+                        'Data Quality Assessment',
+                        'Quality Monitoring',
+                        'Issue Resolution',
+                        'Quality Metrics'
+                    ]
+                },
+                'data_security': {
+                    'score': 93.4,
+                    'status': 'Excellent',
+                    'metrics': {
+                        'access_control': 95.2,
+                        'encryption_coverage': 91.8,
+                        'audit_compliance': 94.7
+                    },
+                    'areas': [
+                        'Data Classification',
+                        'Access Management',
+                        'Encryption Standards',
+                        'Audit and Monitoring'
+                    ]
+                },
+                'data_lifecycle': {
+                    'score': 79.3,
+                    'status': 'Needs Improvement',
+                    'metrics': {
+                        'retention_compliance': 82.5,
+                        'archival_efficiency': 76.8,
+                        'disposal_process': 81.2
+                    },
+                    'areas': [
+                        'Data Retention Policies',
+                        'Archival Procedures',
+                        'Disposal Processes',
+                        'Lifecycle Automation'
+                    ]
+                }
+            },
+            'sap_specific_metrics': {
+                'equipment_master_data': {
+                    'quality_score': 88.5,
+                    'completeness': 91.2,
+                    'accuracy': 86.7,
+                    'consistency': 89.3
+                },
+                'functional_locations': {
+                    'quality_score': 85.9,
+                    'completeness': 88.1,
+                    'accuracy': 84.2,
+                    'consistency': 87.6
+                },
+                'maintenance_orders': {
+                    'quality_score': 82.3,
+                    'completeness': 85.7,
+                    'accuracy': 80.1,
+                    'consistency': 83.8
+                }
+            },
+            'recommendations': [
+                'Implement data lifecycle automation for improved retention compliance',
+                'Enhance data modeling documentation standards',
+                'Strengthen data stewardship program coverage',
+                'Optimize archival procedures for better efficiency',
+                'Expand data quality monitoring across all SAP modules'
+            ],
+            'dmbok2_maturity_assessment': {
+                'overall_maturity': 'Level 3 (Defined)',
+                'governance_maturity': 'Level 3 (Defined)',
+                'architecture_maturity': 'Level 4 (Managed)',
+                'quality_maturity': 'Level 3 (Defined)',
+                'security_maturity': 'Level 4 (Managed)',
+                'lifecycle_maturity': 'Level 2 (Repeatable)'
+            }
+        }
+        
+        if format_type == 'pdf':
+            report_file = generate_pdf_report(report_data, 'data_management')
+            return jsonify({
+                'success': True,
+                'download_url': f'/api/reports/download/{report_file}',
+                'message': 'Data management report generated successfully'
+            })
+        else:
+            return jsonify({
+                'success': True,
+                'data': report_data,
+                'message': 'Data management data generated'
+            })
+            
+    except Exception as e:
+        logger.error(f"Error generating data management report: {str(e)}")
+        return jsonify({'error': 'Failed to generate data management report'}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080, debug=False) 

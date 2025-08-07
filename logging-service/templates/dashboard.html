@@ -1506,12 +1506,23 @@
                                                         </div>
                                                     </div>
                                                 </div>
+                                                <div class="row mb-3">
+                                                    <div class="col-12">
+                                                        <div class="text-center">
+                                                            <h6 id="dmbok2-maturity" class="text-info">--</h6>
+                                                            <small class="text-muted">DMBOK2 Maturity Level</small>
+                                                        </div>
+                                                    </div>
+                                                </div>
                                                 <div class="d-grid gap-2">
                                                     <button class="btn btn-outline-info" onclick="generateDataQualityReport()">
                                                         <i class="fas fa-file-pdf me-2"></i>Data Quality Report
                                                     </button>
                                                     <button class="btn btn-outline-primary" onclick="generateDataLineageReport()">
                                                         <i class="fas fa-project-diagram me-2"></i>Data Lineage Report
+                                                    </button>
+                                                    <button class="btn btn-outline-success" onclick="generateDataManagementReport()">
+                                                        <i class="fas fa-database me-2"></i>Data Management Report
                                                     </button>
                                                 </div>
                                             </div>
@@ -4423,6 +4434,36 @@
             });
         }
 
+        function generateDataManagementReport() {
+            showLoading();
+            fetch('/api/reports/data-management', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    report_type: 'data_management_analysis',
+                    include_dmbok2: true,
+                    format: 'pdf'
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                hideLoading();
+                if (data.success) {
+                    showAlert('Data management report generated successfully!', 'success');
+                    window.open(data.download_url, '_blank');
+                } else {
+                    showAlert('Error generating data management report: ' + data.error, 'error');
+                }
+            })
+            .catch(error => {
+                hideLoading();
+                showAlert('Error generating data management report', 'error');
+                console.error('Error:', error);
+            });
+        }
+
         function generateTaskReport() {
             showLoading();
             fetch('/api/reports/task-management', {
@@ -4746,6 +4787,7 @@
                     document.getElementById('data-issues-count').textContent = data.active_issues;
                     document.getElementById('task-completion-rate').textContent = data.completion_rate + '%';
                     document.getElementById('overdue-tasks').textContent = data.overdue_tasks;
+                    document.getElementById('dmbok2-maturity').textContent = data.dmbok2_maturity;
                 })
                 .catch(error => console.error('Error loading information metrics:', error));
 
