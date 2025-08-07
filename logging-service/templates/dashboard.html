@@ -1375,39 +1375,359 @@
             </div>
         </div>
 
-        <!-- Export Section -->
-        <div class="row mb-4">
+        <!-- Comprehensive Reports Hub -->
+        <div class="row mb-4" id="reports-section" style="display: none;">
             <div class="col-12">
                 <div class="card">
                     <div class="card-header">
-                        <i class="fas fa-download me-2"></i>
-                        Export Reports
+                        <i class="fas fa-chart-line me-2"></i>
+                        Automated Reports Hub
+                        <span class="badge bg-success ms-2">C-Suite Ready</span>
                     </div>
                     <div class="card-body">
-                        <div class="row">
-                            <div class="col-md-3">
-                                <button class="btn btn-success btn-custom w-100" onclick="exportReport('csv')">
-                                    <i class="fas fa-file-csv me-2"></i>
-                                    Export CSV
-                                </button>
+                        <!-- Report Categories -->
+                        <div class="row mb-4">
+                            <div class="col-12">
+                                <ul class="nav nav-tabs" id="reportTabs" role="tablist">
+                                    <li class="nav-item" role="presentation">
+                                        <button class="nav-link active" id="executive-tab" data-bs-toggle="tab" data-bs-target="#executive" type="button" role="tab">
+                                            <i class="fas fa-crown me-2"></i>C-Suite Reports
+                                        </button>
+                                    </li>
+                                    <li class="nav-item" role="presentation">
+                                        <button class="nav-link" id="information-tab" data-bs-toggle="tab" data-bs-target="#information" type="button" role="tab">
+                                            <i class="fas fa-database me-2"></i>Information Management
+                                        </button>
+                                    </li>
+                                    <li class="nav-item" role="presentation">
+                                        <button class="nav-link" id="architecture-tab" data-bs-toggle="tab" data-bs-target="#architecture" type="button" role="tab">
+                                            <i class="fas fa-sitemap me-2"></i>Data Architecture
+                                        </button>
+                                    </li>
+                                    <li class="nav-item" role="presentation">
+                                        <button class="nav-link" id="governance-tab" data-bs-toggle="tab" data-bs-target="#governance" type="button" role="tab">
+                                            <i class="fas fa-shield-alt me-2"></i>Governance & Compliance
+                                        </button>
+                                    </li>
+                                </ul>
                             </div>
-                            <div class="col-md-3">
-                                <button class="btn btn-primary btn-custom w-100" onclick="exportReport('excel')">
-                                    <i class="fas fa-file-excel me-2"></i>
-                                    Export Excel
-                                </button>
+                        </div>
+
+                        <!-- Tab Content -->
+                        <div class="tab-content" id="reportTabContent">
+                            <!-- C-Suite Reports -->
+                            <div class="tab-pane fade show active" id="executive" role="tabpanel">
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <div class="card h-100">
+                                            <div class="card-header bg-primary text-white">
+                                                <i class="fas fa-chart-line me-2"></i>Executive Summary
+                                            </div>
+                                            <div class="card-body">
+                                                <div class="row mb-3">
+                                                    <div class="col-6">
+                                                        <div class="text-center">
+                                                            <h4 id="executive-quality-score">--</h4>
+                                                            <small class="text-muted">Data Quality Score</small>
+                                                        </div>
+                                                    </div>
+                                                    <div class="col-6">
+                                                        <div class="text-center">
+                                                            <h4 id="executive-risk-level">--</h4>
+                                                            <small class="text-muted">Risk Level</small>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div class="d-grid gap-2">
+                                                    <button class="btn btn-outline-primary" onclick="generateExecutiveReport()">
+                                                        <i class="fas fa-file-pdf me-2"></i>Generate Executive Report
+                                                    </button>
+                                                    <button class="btn btn-outline-success" onclick="generateKPIDashboard()">
+                                                        <i class="fas fa-chart-bar me-2"></i>KPI Dashboard
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <div class="card h-100">
+                                            <div class="card-header bg-warning text-dark">
+                                                <i class="fas fa-exclamation-triangle me-2"></i>Risk Register Alignment
+                                            </div>
+                                            <div class="card-body">
+                                                <div class="row mb-3">
+                                                    <div class="col-6">
+                                                        <div class="text-center">
+                                                            <h4 id="risk-alignment-score">--</h4>
+                                                            <small class="text-muted">Alignment Score</small>
+                                                        </div>
+                                                    </div>
+                                                    <div class="col-6">
+                                                        <div class="text-center">
+                                                            <h4 id="critical-risks">--</h4>
+                                                            <small class="text-muted">Critical Risks</small>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div class="d-grid gap-2">
+                                                    <button class="btn btn-outline-warning" onclick="generateRiskReport()">
+                                                        <i class="fas fa-file-pdf me-2"></i>Risk Assessment Report
+                                                    </button>
+                                                    <button class="btn btn-outline-info" onclick="generateRiskMatrix()">
+                                                        <i class="fas fa-th me-2"></i>Risk Matrix
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
-                            <div class="col-md-3">
-                                <button class="btn btn-danger btn-custom w-100" onclick="exportReport('pdf')">
-                                    <i class="fas fa-file-pdf me-2"></i>
-                                    Export PDF
-                                </button>
+
+                            <!-- Information Management Reports -->
+                            <div class="tab-pane fade" id="information" role="tabpanel">
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <div class="card h-100">
+                                            <div class="card-header bg-info text-white">
+                                                <i class="fas fa-database me-2"></i>Data Quality Analysis
+                                            </div>
+                                            <div class="card-body">
+                                                <div class="row mb-3">
+                                                    <div class="col-6">
+                                                        <div class="text-center">
+                                                            <h4 id="data-quality-score">--</h4>
+                                                            <small class="text-muted">Quality Score</small>
+                                                        </div>
+                                                    </div>
+                                                    <div class="col-6">
+                                                        <div class="text-center">
+                                                            <h4 id="data-issues-count">--</h4>
+                                                            <small class="text-muted">Active Issues</small>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div class="d-grid gap-2">
+                                                    <button class="btn btn-outline-info" onclick="generateDataQualityReport()">
+                                                        <i class="fas fa-file-pdf me-2"></i>Data Quality Report
+                                                    </button>
+                                                    <button class="btn btn-outline-primary" onclick="generateDataLineageReport()">
+                                                        <i class="fas fa-project-diagram me-2"></i>Data Lineage Report
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <div class="card h-100">
+                                            <div class="card-header bg-success text-white">
+                                                <i class="fas fa-tasks me-2"></i>Task Management
+                                            </div>
+                                            <div class="card-body">
+                                                <div class="row mb-3">
+                                                    <div class="col-6">
+                                                        <div class="text-center">
+                                                            <h4 id="task-completion-rate">--</h4>
+                                                            <small class="text-muted">Completion Rate</small>
+                                                        </div>
+                                                    </div>
+                                                    <div class="col-6">
+                                                        <div class="text-center">
+                                                            <h4 id="overdue-tasks">--</h4>
+                                                            <small class="text-muted">Overdue Tasks</small>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div class="d-grid gap-2">
+                                                    <button class="btn btn-outline-success" onclick="generateTaskReport()">
+                                                        <i class="fas fa-file-pdf me-2"></i>Task Management Report
+                                                    </button>
+                                                    <button class="btn btn-outline-warning" onclick="generateWorkflowReport()">
+                                                        <i class="fas fa-route me-2"></i>Workflow Analysis
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
-                            <div class="col-md-3">
-                                <button class="btn btn-info btn-custom w-100" onclick="generateQualityReport()">
-                                    <i class="fas fa-chart-bar me-2"></i>
-                                    Quality Report
-                                </button>
+
+                            <!-- Data Architecture Reports -->
+                            <div class="tab-pane fade" id="architecture" role="tabpanel">
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <div class="card h-100">
+                                            <div class="card-header bg-secondary text-white">
+                                                <i class="fas fa-sitemap me-2"></i>System Health
+                                            </div>
+                                            <div class="card-body">
+                                                <div class="row mb-3">
+                                                    <div class="col-6">
+                                                        <div class="text-center">
+                                                            <h4 id="system-health-score">--</h4>
+                                                            <small class="text-muted">Health Score</small>
+                                                        </div>
+                                                    </div>
+                                                    <div class="col-6">
+                                                        <div class="text-center">
+                                                            <h4 id="validation-coverage">--</h4>
+                                                            <small class="text-muted">Validation Coverage</small>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div class="d-grid gap-2">
+                                                    <button class="btn btn-outline-secondary" onclick="generateSystemHealthReport()">
+                                                        <i class="fas fa-file-pdf me-2"></i>System Health Report
+                                                    </button>
+                                                    <button class="btn btn-outline-info" onclick="generateArchitectureReport()">
+                                                        <i class="fas fa-sitemap me-2"></i>Architecture Analysis
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <div class="card h-100">
+                                            <div class="card-header bg-dark text-white">
+                                                <i class="fas fa-cogs me-2"></i>Validation Rules
+                                            </div>
+                                            <div class="card-body">
+                                                <div class="row mb-3">
+                                                    <div class="col-6">
+                                                        <div class="text-center">
+                                                            <h4 id="validation-success-rate">--</h4>
+                                                            <small class="text-muted">Success Rate</small>
+                                                        </div>
+                                                    </div>
+                                                    <div class="col-6">
+                                                        <div class="text-center">
+                                                            <h4 id="active-rules">--</h4>
+                                                            <small class="text-muted">Active Rules</small>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div class="d-grid gap-2">
+                                                    <button class="btn btn-outline-dark" onclick="generateValidationReport()">
+                                                        <i class="fas fa-file-pdf me-2"></i>Validation Rules Report
+                                                    </button>
+                                                    <button class="btn btn-outline-primary" onclick="generateRuleAnalysis()">
+                                                        <i class="fas fa-chart-bar me-2"></i>Rule Performance
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Governance & Compliance Reports -->
+                            <div class="tab-pane fade" id="governance" role="tabpanel">
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <div class="card h-100">
+                                            <div class="card-header bg-danger text-white">
+                                                <i class="fas fa-shield-alt me-2"></i>Security & Compliance
+                                            </div>
+                                            <div class="card-body">
+                                                <div class="row mb-3">
+                                                    <div class="col-6">
+                                                        <div class="text-center">
+                                                            <h4 id="compliance-score">--</h4>
+                                                            <small class="text-muted">Compliance Score</small>
+                                                        </div>
+                                                    </div>
+                                                    <div class="col-6">
+                                                        <div class="text-center">
+                                                            <h4 id="security-events">--</h4>
+                                                            <small class="text-muted">Security Events</small>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div class="d-grid gap-2">
+                                                    <button class="btn btn-outline-danger" onclick="generateSecurityReport()">
+                                                        <i class="fas fa-file-pdf me-2"></i>Security Report
+                                                    </button>
+                                                    <button class="btn btn-outline-warning" onclick="generateComplianceReport()">
+                                                        <i class="fas fa-clipboard-check me-2"></i>Compliance Report
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <div class="card h-100">
+                                            <div class="card-header bg-primary text-white">
+                                                <i class="fas fa-gavel me-2"></i>Governance Framework
+                                            </div>
+                                            <div class="card-body">
+                                                <div class="row mb-3">
+                                                    <div class="col-6">
+                                                        <div class="text-center">
+                                                            <h4 id="governance-score">--</h4>
+                                                            <small class="text-muted">Governance Score</small>
+                                                        </div>
+                                                    </div>
+                                                    <div class="col-6">
+                                                        <div class="text-center">
+                                                            <h4 id="policy-adherence">--</h4>
+                                                            <small class="text-muted">Policy Adherence</small>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div class="d-grid gap-2">
+                                                    <button class="btn btn-outline-primary" onclick="generateGovernanceReport()">
+                                                        <i class="fas fa-file-pdf me-2"></i>Governance Report
+                                                    </button>
+                                                    <button class="btn btn-outline-info" onclick="generateFrameworkReport()">
+                                                        <i class="fas fa-sitemap me-2"></i>Framework Alignment
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Report Generation Status -->
+                        <div class="row mt-4">
+                            <div class="col-12">
+                                <div class="card">
+                                    <div class="card-header">
+                                        <i class="fas fa-clock me-2"></i>Report Generation Status
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="row">
+                                            <div class="col-md-3">
+                                                <div class="text-center">
+                                                    <i class="fas fa-check-circle text-success fa-2x mb-2"></i>
+                                                    <h6>Automated</h6>
+                                                    <small class="text-muted">Daily Reports</small>
+                                                </div>
+                                            </div>
+                                            <div class="col-md-3">
+                                                <div class="text-center">
+                                                    <i class="fas fa-clock text-warning fa-2x mb-2"></i>
+                                                    <h6>Scheduled</h6>
+                                                    <small class="text-muted">Weekly Reports</small>
+                                                </div>
+                                            </div>
+                                            <div class="col-md-3">
+                                                <div class="text-center">
+                                                    <i class="fas fa-download text-info fa-2x mb-2"></i>
+                                                    <h6>Export Ready</h6>
+                                                    <small class="text-muted">PDF, Excel, CSV</small>
+                                                </div>
+                                            </div>
+                                            <div class="col-md-3">
+                                                <div class="text-center">
+                                                    <i class="fas fa-share-alt text-primary fa-2x mb-2"></i>
+                                                    <h6>Shareable</h6>
+                                                    <small class="text-muted">Secure Sharing</small>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -1774,10 +2094,12 @@
                     loadTasksData();
                     break;
                 case 'reports':
-                    const exportSection = document.querySelector('.card-header');
-                    if (exportSection && exportSection.textContent.includes('Export Reports')) {
-                        exportSection.scrollIntoView({ behavior: 'smooth' });
-                    }
+                    document.getElementById('reports-section').style.display = 'block';
+                    document.getElementById('reports-section').scrollIntoView({ behavior: 'smooth' });
+                    // Load report metrics after a short delay
+                    setTimeout(() => {
+                        loadReportMetrics();
+                    }, 100);
                     break;
                 case 'settings':
                     // Future implementation
@@ -3915,6 +4237,542 @@
                 sendMessage();
             }
         }
+
+        // ===== COMPREHENSIVE REPORT GENERATION FUNCTIONS =====
+
+        // C-Suite Executive Reports
+        function generateExecutiveReport() {
+            showLoading();
+            fetch('/api/reports/executive', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    report_type: 'executive_summary',
+                    include_charts: true,
+                    format: 'pdf'
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                hideLoading();
+                if (data.success) {
+                    showAlert('Executive report generated successfully!', 'success');
+                    // Trigger download
+                    window.open(data.download_url, '_blank');
+                } else {
+                    showAlert('Error generating executive report: ' + data.error, 'error');
+                }
+            })
+            .catch(error => {
+                hideLoading();
+                showAlert('Error generating executive report', 'error');
+                console.error('Error:', error);
+            });
+        }
+
+        function generateKPIDashboard() {
+            showLoading();
+            fetch('/api/reports/kpi-dashboard', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    report_type: 'kpi_dashboard',
+                    include_metrics: true,
+                    format: 'pdf'
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                hideLoading();
+                if (data.success) {
+                    showAlert('KPI dashboard generated successfully!', 'success');
+                    window.open(data.download_url, '_blank');
+                } else {
+                    showAlert('Error generating KPI dashboard: ' + data.error, 'error');
+                }
+            })
+            .catch(error => {
+                hideLoading();
+                showAlert('Error generating KPI dashboard', 'error');
+                console.error('Error:', error);
+            });
+        }
+
+        function generateRiskReport() {
+            showLoading();
+            fetch('/api/reports/risk-assessment', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    report_type: 'risk_assessment',
+                    include_matrix: true,
+                    format: 'pdf'
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                hideLoading();
+                if (data.success) {
+                    showAlert('Risk assessment report generated successfully!', 'success');
+                    window.open(data.download_url, '_blank');
+                } else {
+                    showAlert('Error generating risk report: ' + data.error, 'error');
+                }
+            })
+            .catch(error => {
+                hideLoading();
+                showAlert('Error generating risk report', 'error');
+                console.error('Error:', error);
+            });
+        }
+
+        function generateRiskMatrix() {
+            showLoading();
+            fetch('/api/reports/risk-matrix', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    report_type: 'risk_matrix',
+                    include_visualization: true,
+                    format: 'pdf'
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                hideLoading();
+                if (data.success) {
+                    showAlert('Risk matrix generated successfully!', 'success');
+                    window.open(data.download_url, '_blank');
+                } else {
+                    showAlert('Error generating risk matrix: ' + data.error, 'error');
+                }
+            })
+            .catch(error => {
+                hideLoading();
+                showAlert('Error generating risk matrix', 'error');
+                console.error('Error:', error);
+            });
+        }
+
+        // Information Management Reports
+        function generateDataQualityReport() {
+            showLoading();
+            fetch('/api/reports/data-quality', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    report_type: 'data_quality_analysis',
+                    include_trends: true,
+                    format: 'pdf'
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                hideLoading();
+                if (data.success) {
+                    showAlert('Data quality report generated successfully!', 'success');
+                    window.open(data.download_url, '_blank');
+                } else {
+                    showAlert('Error generating data quality report: ' + data.error, 'error');
+                }
+            })
+            .catch(error => {
+                hideLoading();
+                showAlert('Error generating data quality report', 'error');
+                console.error('Error:', error);
+            });
+        }
+
+        function generateDataLineageReport() {
+            showLoading();
+            fetch('/api/reports/data-lineage', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    report_type: 'data_lineage',
+                    include_diagrams: true,
+                    format: 'pdf'
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                hideLoading();
+                if (data.success) {
+                    showAlert('Data lineage report generated successfully!', 'success');
+                    window.open(data.download_url, '_blank');
+                } else {
+                    showAlert('Error generating data lineage report: ' + data.error, 'error');
+                }
+            })
+            .catch(error => {
+                hideLoading();
+                showAlert('Error generating data lineage report', 'error');
+                console.error('Error:', error);
+            });
+        }
+
+        function generateTaskReport() {
+            showLoading();
+            fetch('/api/reports/task-management', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    report_type: 'task_management',
+                    include_workflow: true,
+                    format: 'pdf'
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                hideLoading();
+                if (data.success) {
+                    showAlert('Task management report generated successfully!', 'success');
+                    window.open(data.download_url, '_blank');
+                } else {
+                    showAlert('Error generating task report: ' + data.error, 'error');
+                }
+            })
+            .catch(error => {
+                hideLoading();
+                showAlert('Error generating task report', 'error');
+                console.error('Error:', error);
+            });
+        }
+
+        function generateWorkflowReport() {
+            showLoading();
+            fetch('/api/reports/workflow-analysis', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    report_type: 'workflow_analysis',
+                    include_bottlenecks: true,
+                    format: 'pdf'
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                hideLoading();
+                if (data.success) {
+                    showAlert('Workflow analysis report generated successfully!', 'success');
+                    window.open(data.download_url, '_blank');
+                } else {
+                    showAlert('Error generating workflow report: ' + data.error, 'error');
+                }
+            })
+            .catch(error => {
+                hideLoading();
+                showAlert('Error generating workflow report', 'error');
+                console.error('Error:', error);
+            });
+        }
+
+        // Data Architecture Reports
+        function generateSystemHealthReport() {
+            showLoading();
+            fetch('/api/reports/system-health', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    report_type: 'system_health',
+                    include_metrics: true,
+                    format: 'pdf'
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                hideLoading();
+                if (data.success) {
+                    showAlert('System health report generated successfully!', 'success');
+                    window.open(data.download_url, '_blank');
+                } else {
+                    showAlert('Error generating system health report: ' + data.error, 'error');
+                }
+            })
+            .catch(error => {
+                hideLoading();
+                showAlert('Error generating system health report', 'error');
+                console.error('Error:', error);
+            });
+        }
+
+        function generateArchitectureReport() {
+            showLoading();
+            fetch('/api/reports/architecture-analysis', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    report_type: 'architecture_analysis',
+                    include_diagrams: true,
+                    format: 'pdf'
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                hideLoading();
+                if (data.success) {
+                    showAlert('Architecture analysis report generated successfully!', 'success');
+                    window.open(data.download_url, '_blank');
+                } else {
+                    showAlert('Error generating architecture report: ' + data.error, 'error');
+                }
+            })
+            .catch(error => {
+                hideLoading();
+                showAlert('Error generating architecture report', 'error');
+                console.error('Error:', error);
+            });
+        }
+
+        function generateValidationReport() {
+            showLoading();
+            fetch('/api/reports/validation-rules', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    report_type: 'validation_rules',
+                    include_performance: true,
+                    format: 'pdf'
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                hideLoading();
+                if (data.success) {
+                    showAlert('Validation rules report generated successfully!', 'success');
+                    window.open(data.download_url, '_blank');
+                } else {
+                    showAlert('Error generating validation report: ' + data.error, 'error');
+                }
+            })
+            .catch(error => {
+                hideLoading();
+                showAlert('Error generating validation report', 'error');
+                console.error('Error:', error);
+            });
+        }
+
+        function generateRuleAnalysis() {
+            showLoading();
+            fetch('/api/reports/rule-performance', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    report_type: 'rule_performance',
+                    include_analytics: true,
+                    format: 'pdf'
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                hideLoading();
+                if (data.success) {
+                    showAlert('Rule performance report generated successfully!', 'success');
+                    window.open(data.download_url, '_blank');
+                } else {
+                    showAlert('Error generating rule analysis: ' + data.error, 'error');
+                }
+            })
+            .catch(error => {
+                hideLoading();
+                showAlert('Error generating rule analysis', 'error');
+                console.error('Error:', error);
+            });
+        }
+
+        // Governance & Compliance Reports
+        function generateSecurityReport() {
+            showLoading();
+            fetch('/api/reports/security', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    report_type: 'security_analysis',
+                    include_events: true,
+                    format: 'pdf'
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                hideLoading();
+                if (data.success) {
+                    showAlert('Security report generated successfully!', 'success');
+                    window.open(data.download_url, '_blank');
+                } else {
+                    showAlert('Error generating security report: ' + data.error, 'error');
+                }
+            })
+            .catch(error => {
+                hideLoading();
+                showAlert('Error generating security report', 'error');
+                console.error('Error:', error);
+            });
+        }
+
+        function generateComplianceReport() {
+            showLoading();
+            fetch('/api/reports/compliance', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    report_type: 'compliance_analysis',
+                    include_frameworks: true,
+                    format: 'pdf'
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                hideLoading();
+                if (data.success) {
+                    showAlert('Compliance report generated successfully!', 'success');
+                    window.open(data.download_url, '_blank');
+                } else {
+                    showAlert('Error generating compliance report: ' + data.error, 'error');
+                }
+            })
+            .catch(error => {
+                hideLoading();
+                showAlert('Error generating compliance report', 'error');
+                console.error('Error:', error);
+            });
+        }
+
+        function generateGovernanceReport() {
+            showLoading();
+            fetch('/api/reports/governance', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    report_type: 'governance_analysis',
+                    include_policies: true,
+                    format: 'pdf'
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                hideLoading();
+                if (data.success) {
+                    showAlert('Governance report generated successfully!', 'success');
+                    window.open(data.download_url, '_blank');
+                } else {
+                    showAlert('Error generating governance report: ' + data.error, 'error');
+                }
+            })
+            .catch(error => {
+                hideLoading();
+                showAlert('Error generating governance report', 'error');
+                console.error('Error:', error);
+            });
+        }
+
+        function generateFrameworkReport() {
+            showLoading();
+            fetch('/api/reports/framework-alignment', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    report_type: 'framework_alignment',
+                    include_mapping: true,
+                    format: 'pdf'
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                hideLoading();
+                if (data.success) {
+                    showAlert('Framework alignment report generated successfully!', 'success');
+                    window.open(data.download_url, '_blank');
+                } else {
+                    showAlert('Error generating framework report: ' + data.error, 'error');
+                }
+            })
+            .catch(error => {
+                hideLoading();
+                showAlert('Error generating framework report', 'error');
+                console.error('Error:', error);
+            });
+        }
+
+        // Load report metrics when reports section is shown
+        function loadReportMetrics() {
+            // Load executive metrics
+            fetch('/api/reports/metrics/executive')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('executive-quality-score').textContent = data.quality_score + '%';
+                    document.getElementById('executive-risk-level').textContent = data.risk_level;
+                    document.getElementById('risk-alignment-score').textContent = data.risk_alignment + '%';
+                    document.getElementById('critical-risks').textContent = data.critical_risks;
+                })
+                .catch(error => console.error('Error loading executive metrics:', error));
+
+            // Load information management metrics
+            fetch('/api/reports/metrics/information')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('data-quality-score').textContent = data.quality_score + '%';
+                    document.getElementById('data-issues-count').textContent = data.active_issues;
+                    document.getElementById('task-completion-rate').textContent = data.completion_rate + '%';
+                    document.getElementById('overdue-tasks').textContent = data.overdue_tasks;
+                })
+                .catch(error => console.error('Error loading information metrics:', error));
+
+            // Load architecture metrics
+            fetch('/api/reports/metrics/architecture')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('system-health-score').textContent = data.health_score + '%';
+                    document.getElementById('validation-coverage').textContent = data.validation_coverage + '%';
+                    document.getElementById('validation-success-rate').textContent = data.success_rate + '%';
+                    document.getElementById('active-rules').textContent = data.active_rules;
+                })
+                .catch(error => console.error('Error loading architecture metrics:', error));
+
+            // Load governance metrics
+            fetch('/api/reports/metrics/governance')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('compliance-score').textContent = data.compliance_score + '%';
+                    document.getElementById('security-events').textContent = data.security_events;
+                    document.getElementById('governance-score').textContent = data.governance_score + '%';
+                    document.getElementById('policy-adherence').textContent = data.policy_adherence + '%';
+                })
+                .catch(error => console.error('Error loading governance metrics:', error));
+        }
+
+
     </script>
             </div> <!-- Close main-content -->
         </div> <!-- Close main-content -->
