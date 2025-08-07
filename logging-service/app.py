@@ -2002,30 +2002,18 @@ def get_governance_metrics():
 def generate_pdf_report(report_data, report_type):
     """Generate comprehensive PDF report and return filename"""
     try:
-        # Create PDF using reportlab
         filename = f"{report_type}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.pdf"
         filepath = f"/app/data/reports/{filename}"
-        
-        # Ensure reports directory exists
         os.makedirs("/app/data/reports", exist_ok=True)
-        
-        # Generate PDF content
         doc = SimpleDocTemplate(filepath, pagesize=letter)
         story = []
-        
-        # Get styles
         styles = getSampleStyleSheet()
-        
-        # Add title
         title = Paragraph(report_data.get('title', 'Report'), styles['Title'])
         story.append(title)
         story.append(Paragraph("<br/>", styles['Normal']))
-        
-        # Add generation info
         generated_at = report_data.get('generated_at', 'Unknown')
         period = report_data.get('period', 'Unknown')
         framework = report_data.get('framework', '')
-        
         info_text = f"""
         <b>Report Information:</b><br/>
         Generated: {generated_at}<br/>
@@ -2033,169 +2021,352 @@ def generate_pdf_report(report_data, report_type):
         """
         if framework:
             info_text += f"Framework: {framework}<br/>"
-        
         info = Paragraph(info_text, styles['Normal'])
         story.append(info)
         story.append(Paragraph("<br/>", styles['Normal']))
-        
-        # Handle different report types with comprehensive content
+        # Specialized content generators for each report type
         if report_type == 'data_management':
             story.extend(_generate_dmbok2_content(report_data, styles))
+        elif report_type == 'executive':
+            story.extend(_generate_executive_content(report_data, styles))
+        elif report_type == 'kpi_dashboard':
+            story.extend(_generate_kpi_dashboard_content(report_data, styles))
+        elif report_type == 'data_quality':
+            story.extend(_generate_data_quality_content(report_data, styles))
+        elif report_type == 'task_management':
+            story.extend(_generate_task_management_content(report_data, styles))
+        elif report_type == 'system_health':
+            story.extend(_generate_system_health_content(report_data, styles))
+        elif report_type == 'security':
+            story.extend(_generate_security_content(report_data, styles))
+        elif report_type == 'compliance':
+            story.extend(_generate_compliance_content(report_data, styles))
+        elif report_type == 'governance':
+            story.extend(_generate_governance_content(report_data, styles))
+        elif report_type == 'framework_alignment':
+            story.extend(_generate_framework_alignment_content(report_data, styles))
         elif report_type == 'risk_assessment':
             story.extend(_generate_risk_content(report_data, styles))
         elif report_type == 'risk_matrix':
             story.extend(_generate_risk_matrix_content(report_data, styles))
+        elif report_type == 'data_lineage':
+            story.extend(_generate_data_lineage_content(report_data, styles))
+        elif report_type == 'workflow_analysis':
+            story.extend(_generate_workflow_analysis_content(report_data, styles))
+        elif report_type == 'architecture_analysis':
+            story.extend(_generate_architecture_analysis_content(report_data, styles))
+        elif report_type == 'validation_rules':
+            story.extend(_generate_validation_rules_content(report_data, styles))
+        elif report_type == 'rule_performance':
+            story.extend(_generate_rule_performance_content(report_data, styles))
         else:
-            # Generic content handling
             story.extend(_generate_generic_content(report_data, styles))
-        
-        # Build PDF
         doc.build(story)
-        
         return filename
-        
     except Exception as e:
         logger.error(f"Error generating PDF report: {str(e)}")
         raise
 
-def _generate_dmbok2_content(report_data, styles):
-    """Generate DMBOK2-specific content"""
+def _generate_executive_content(report_data, styles):
     content = []
-    
-    # Add DMBOK2 components section
-    content.append(Paragraph("<b>DMBOK2 Framework Analysis</b>", styles['Heading2']))
+    content.append(Paragraph("<b>Executive Summary</b>", styles['Heading2']))
     content.append(Paragraph("<br/>", styles['Normal']))
-    
-    if 'dmbok2_components' in report_data:
-        components = report_data['dmbok2_components']
-        
-        for component_name, component_data in components.items():
-            # Component header
-            component_title = component_name.replace('_', ' ').title()
-            content.append(Paragraph(f"<b>{component_title}</b>", styles['Heading3']))
-            
-            # Component score and status
-            score = component_data.get('score', 0)
-            status = component_data.get('status', 'Unknown')
-            content.append(Paragraph(f"Score: {score}% | Status: {status}", styles['Normal']))
-            
-            # Component metrics
-            if 'metrics' in component_data:
-                content.append(Paragraph("<b>Metrics:</b>", styles['Normal']))
-                for metric_name, metric_value in component_data['metrics'].items():
-                    metric_display = metric_name.replace('_', ' ').title()
-                    content.append(Paragraph(f"• {metric_display}: {metric_value}%", styles['Normal']))
-            
-            # Component areas
-            if 'areas' in component_data:
-                content.append(Paragraph("<b>Key Areas:</b>", styles['Normal']))
-                for area in component_data['areas']:
-                    content.append(Paragraph(f"• {area}", styles['Normal']))
-            
-            content.append(Paragraph("<br/>", styles['Normal']))
-    
-    # Add SAP-specific metrics
-    if 'sap_specific_metrics' in report_data:
-        content.append(Paragraph("<b>SAP-Specific Data Quality Metrics</b>", styles['Heading2']))
-        content.append(Paragraph("<br/>", styles['Normal']))
-        
-        sap_metrics = report_data['sap_specific_metrics']
-        for dataset_name, dataset_data in sap_metrics.items():
-            dataset_title = dataset_name.replace('_', ' ').title()
-            content.append(Paragraph(f"<b>{dataset_title}</b>", styles['Heading3']))
-            
-            quality_score = dataset_data.get('quality_score', 0)
-            content.append(Paragraph(f"Overall Quality Score: {quality_score}%", styles['Normal']))
-            
-            for metric_name, metric_value in dataset_data.items():
-                if metric_name != 'quality_score':
-                    metric_display = metric_name.replace('_', ' ').title()
-                    content.append(Paragraph(f"• {metric_display}: {metric_value}%", styles['Normal']))
-            
-            content.append(Paragraph("<br/>", styles['Normal']))
-    
-    # Add maturity assessment
-    if 'dmbok2_maturity_assessment' in report_data:
-        content.append(Paragraph("<b>DMBOK2 Maturity Assessment</b>", styles['Heading2']))
-        content.append(Paragraph("<br/>", styles['Normal']))
-        
-        maturity = report_data['dmbok2_maturity_assessment']
-        for maturity_area, maturity_level in maturity.items():
-            area_display = maturity_area.replace('_', ' ').title()
-            content.append(Paragraph(f"• {area_display}: {maturity_level}", styles['Normal']))
-        
-        content.append(Paragraph("<br/>", styles['Normal']))
-    
-    # Add recommendations
-    if 'recommendations' in report_data:
-        content.append(Paragraph("<b>Recommendations</b>", styles['Heading2']))
-        content.append(Paragraph("<br/>", styles['Normal']))
-        
-        for i, recommendation in enumerate(report_data['recommendations'], 1):
-            content.append(Paragraph(f"{i}. {recommendation}", styles['Normal']))
-    
-    return content
-
-def _generate_risk_content(report_data, styles):
-    """Generate risk assessment content"""
-    content = []
-    
-    content.append(Paragraph("<b>Risk Assessment Summary</b>", styles['Heading2']))
-    content.append(Paragraph("<br/>", styles['Normal']))
-    
+    if 'quality_score' in report_data:
+        content.append(Paragraph(f"Data Quality Score: {report_data['quality_score']}%", styles['Normal']))
     if 'risk_level' in report_data:
-        content.append(Paragraph(f"Overall Risk Level: {report_data['risk_level']}", styles['Normal']))
-    
+        content.append(Paragraph(f"Risk Level: {report_data['risk_level']}", styles['Normal']))
     if 'key_metrics' in report_data:
-        content.append(Paragraph("<b>Key Risk Metrics</b>", styles['Heading3']))
+        content.append(Paragraph("<b>Key Metrics</b>", styles['Heading3']))
         for key, value in report_data['key_metrics'].items():
             key_display = key.replace('_', ' ').title()
             content.append(Paragraph(f"• {key_display}: {value}", styles['Normal']))
-    
     if 'recommendations' in report_data:
-        content.append(Paragraph("<b>Risk Mitigation Recommendations</b>", styles['Heading3']))
-        for i, recommendation in enumerate(report_data['recommendations'], 1):
-            content.append(Paragraph(f"{i}. {recommendation}", styles['Normal']))
-    
+        content.append(Paragraph("<b>Recommendations</b>", styles['Heading3']))
+        for i, rec in enumerate(report_data['recommendations'], 1):
+            content.append(Paragraph(f"{i}. {rec}", styles['Normal']))
     return content
 
-def _generate_risk_matrix_content(report_data, styles):
-    """Generate risk matrix content"""
+def _generate_kpi_dashboard_content(report_data, styles):
     content = []
-    
-    content.append(Paragraph("<b>Risk Matrix Analysis</b>", styles['Heading2']))
+    content.append(Paragraph("<b>KPI Dashboard</b>", styles['Heading2']))
     content.append(Paragraph("<br/>", styles['Normal']))
-    
-    if 'risk_categories' in report_data:
-        content.append(Paragraph("<b>Risk Categories</b>", styles['Heading3']))
-        for category, details in report_data['risk_categories'].items():
-            content.append(Paragraph(f"<b>{category}</b>", styles['Normal']))
-            if isinstance(details, dict):
-                for key, value in details.items():
-                    key_display = key.replace('_', ' ').title()
-                    content.append(Paragraph(f"• {key_display}: {value}", styles['Normal']))
-            else:
-                content.append(Paragraph(f"• {details}", styles['Normal']))
-    
+    if 'kpi_metrics' in report_data:
+        for kpi, value in report_data['kpi_metrics'].items():
+            kpi_display = kpi.replace('_', ' ').title()
+            content.append(Paragraph(f"• {kpi_display}: {value}", styles['Normal']))
+    if 'trend_analysis' in report_data:
+        content.append(Paragraph("<b>Trend Analysis</b>", styles['Heading3']))
+        for trend, value in report_data['trend_analysis'].items():
+            trend_display = trend.replace('_', ' ').title()
+            content.append(Paragraph(f"• {trend_display}: {value}", styles['Normal']))
+    if 'recommendations' in report_data:
+        content.append(Paragraph("<b>Recommendations</b>", styles['Heading3']))
+        for i, rec in enumerate(report_data['recommendations'], 1):
+            content.append(Paragraph(f"{i}. {rec}", styles['Normal']))
     return content
 
-def _generate_generic_content(report_data, styles):
-    """Generate generic content for other report types"""
+def _generate_data_quality_content(report_data, styles):
     content = []
-    
-    # Add metrics if available
-    if 'metrics' in report_data:
-        content.append(Paragraph("<b>Key Metrics</b>", styles['Heading2']))
-        for key, value in report_data['metrics'].items():
-            key_display = key.replace('_', ' ').title()
-            content.append(Paragraph(f"• {key_display}: {value}", styles['Normal']))
-    
-    # Add recommendations if available
+    content.append(Paragraph("<b>Data Quality Analysis</b>", styles['Heading2']))
+    content.append(Paragraph("<br/>", styles['Normal']))
+    if 'quality_metrics' in report_data:
+        for metric, value in report_data['quality_metrics'].items():
+            metric_display = metric.replace('_', ' ').title()
+            content.append(Paragraph(f"• {metric_display}: {value}", styles['Normal']))
+    if 'dataset_analysis' in report_data:
+        content.append(Paragraph("<b>Dataset Analysis</b>", styles['Heading3']))
+        for ds in report_data['dataset_analysis']:
+            content.append(Paragraph(f"Dataset: {ds.get('dataset', '')}", styles['Normal']))
+            content.append(Paragraph(f"Quality Score: {ds.get('quality_score', '')}", styles['Normal']))
+            content.append(Paragraph(f"Issues: {ds.get('issues', '')}", styles['Normal']))
+            content.append(Paragraph(f"Trend: {ds.get('trend', '')}", styles['Normal']))
+            content.append(Paragraph("<br/>", styles['Normal']))
     if 'recommendations' in report_data:
-        content.append(Paragraph("<b>Recommendations</b>", styles['Heading2']))
-        for i, recommendation in enumerate(report_data['recommendations'], 1):
-            content.append(Paragraph(f"{i}. {recommendation}", styles['Normal']))
-    
+        content.append(Paragraph("<b>Recommendations</b>", styles['Heading3']))
+        for i, rec in enumerate(report_data['recommendations'], 1):
+            content.append(Paragraph(f"{i}. {rec}", styles['Normal']))
+    return content
+
+def _generate_task_management_content(report_data, styles):
+    content = []
+    content.append(Paragraph("<b>Task Management Report</b>", styles['Heading2']))
+    content.append(Paragraph("<br/>", styles['Normal']))
+    if 'task_metrics' in report_data:
+        for metric, value in report_data['task_metrics'].items():
+            metric_display = metric.replace('_', ' ').title()
+            content.append(Paragraph(f"• {metric_display}: {value}", styles['Normal']))
+    if 'task_summary' in report_data:
+        content.append(Paragraph("<b>Task Summary</b>", styles['Heading3']))
+        for task in report_data['task_summary']:
+            content.append(Paragraph(f"Task: {task.get('task', '')}", styles['Normal']))
+            content.append(Paragraph(f"Status: {task.get('status', '')}", styles['Normal']))
+            content.append(Paragraph(f"Owner: {task.get('owner', '')}", styles['Normal']))
+            content.append(Paragraph(f"Due Date: {task.get('due_date', '')}", styles['Normal']))
+            content.append(Paragraph("<br/>", styles['Normal']))
+    if 'recommendations' in report_data:
+        content.append(Paragraph("<b>Recommendations</b>", styles['Heading3']))
+        for i, rec in enumerate(report_data['recommendations'], 1):
+            content.append(Paragraph(f"{i}. {rec}", styles['Normal']))
+    return content
+
+def _generate_system_health_content(report_data, styles):
+    content = []
+    content.append(Paragraph("<b>System Health Report</b>", styles['Heading2']))
+    content.append(Paragraph("<br/>", styles['Normal']))
+    if 'health_metrics' in report_data:
+        for metric, value in report_data['health_metrics'].items():
+            metric_display = metric.replace('_', ' ').title()
+            content.append(Paragraph(f"• {metric_display}: {value}", styles['Normal']))
+    if 'component_health' in report_data:
+        content.append(Paragraph("<b>Component Health</b>", styles['Heading3']))
+        for comp in report_data['component_health']:
+            content.append(Paragraph(f"Component: {comp.get('component', '')}", styles['Normal']))
+            content.append(Paragraph(f"Status: {comp.get('status', '')}", styles['Normal']))
+            content.append(Paragraph(f"Score: {comp.get('score', '')}", styles['Normal']))
+            content.append(Paragraph("<br/>", styles['Normal']))
+    if 'recommendations' in report_data:
+        content.append(Paragraph("<b>Recommendations</b>", styles['Heading3']))
+        for i, rec in enumerate(report_data['recommendations'], 1):
+            content.append(Paragraph(f"{i}. {rec}", styles['Normal']))
+    return content
+
+def _generate_security_content(report_data, styles):
+    content = []
+    content.append(Paragraph("<b>Security Report</b>", styles['Heading2']))
+    content.append(Paragraph("<br/>", styles['Normal']))
+    if 'security_metrics' in report_data:
+        for metric, value in report_data['security_metrics'].items():
+            metric_display = metric.replace('_', ' ').title()
+            content.append(Paragraph(f"• {metric_display}: {value}", styles['Normal']))
+    if 'security_events' in report_data:
+        content.append(Paragraph("<b>Recent Security Events</b>", styles['Heading3']))
+        for event in report_data['security_events']:
+            content.append(Paragraph(f"Event: {event.get('event_type', '')}", styles['Normal']))
+            content.append(Paragraph(f"Severity: {event.get('severity', '')}", styles['Normal']))
+            content.append(Paragraph(f"Source IP: {event.get('source_ip', '')}", styles['Normal']))
+            content.append(Paragraph(f"Timestamp: {event.get('timestamp', '')}", styles['Normal']))
+            content.append(Paragraph(f"Details: {event.get('details', '')}", styles['Normal']))
+            content.append(Paragraph("<br/>", styles['Normal']))
+    if 'recommendations' in report_data:
+        content.append(Paragraph("<b>Recommendations</b>", styles['Heading3']))
+        for i, rec in enumerate(report_data['recommendations'], 1):
+            content.append(Paragraph(f"{i}. {rec}", styles['Normal']))
+    return content
+
+def _generate_compliance_content(report_data, styles):
+    content = []
+    content.append(Paragraph("<b>Compliance Report</b>", styles['Heading2']))
+    content.append(Paragraph("<br/>", styles['Normal']))
+    if 'compliance_metrics' in report_data:
+        for metric, value in report_data['compliance_metrics'].items():
+            metric_display = metric.replace('_', ' ').title()
+            content.append(Paragraph(f"• {metric_display}: {value}", styles['Normal']))
+    if 'compliance_issues' in report_data:
+        content.append(Paragraph("<b>Compliance Issues</b>", styles['Heading3']))
+        for issue in report_data['compliance_issues']:
+            content.append(Paragraph(f"Issue: {issue.get('issue', '')}", styles['Normal']))
+            content.append(Paragraph(f"Severity: {issue.get('severity', '')}", styles['Normal']))
+            content.append(Paragraph(f"Status: {issue.get('status', '')}", styles['Normal']))
+            content.append(Paragraph(f"Details: {issue.get('details', '')}", styles['Normal']))
+            content.append(Paragraph("<br/>", styles['Normal']))
+    if 'recommendations' in report_data:
+        content.append(Paragraph("<b>Recommendations</b>", styles['Heading3']))
+        for i, rec in enumerate(report_data['recommendations'], 1):
+            content.append(Paragraph(f"{i}. {rec}", styles['Normal']))
+    return content
+
+def _generate_governance_content(report_data, styles):
+    content = []
+    content.append(Paragraph("<b>Governance Report</b>", styles['Heading2']))
+    content.append(Paragraph("<br/>", styles['Normal']))
+    if 'governance_metrics' in report_data:
+        for metric, value in report_data['governance_metrics'].items():
+            metric_display = metric.replace('_', ' ').title()
+            content.append(Paragraph(f"• {metric_display}: {value}", styles['Normal']))
+    if 'governance_issues' in report_data:
+        content.append(Paragraph("<b>Governance Issues</b>", styles['Heading3']))
+        for issue in report_data['governance_issues']:
+            content.append(Paragraph(f"Issue: {issue.get('issue', '')}", styles['Normal']))
+            content.append(Paragraph(f"Severity: {issue.get('severity', '')}", styles['Normal']))
+            content.append(Paragraph(f"Status: {issue.get('status', '')}", styles['Normal']))
+            content.append(Paragraph(f"Details: {issue.get('details', '')}", styles['Normal']))
+            content.append(Paragraph("<br/>", styles['Normal']))
+    if 'recommendations' in report_data:
+        content.append(Paragraph("<b>Recommendations</b>", styles['Heading3']))
+        for i, rec in enumerate(report_data['recommendations'], 1):
+            content.append(Paragraph(f"{i}. {rec}", styles['Normal']))
+    return content
+
+def _generate_framework_alignment_content(report_data, styles):
+    content = []
+    content.append(Paragraph("<b>Framework Alignment Report</b>", styles['Heading2']))
+    content.append(Paragraph("<br/>", styles['Normal']))
+    if 'framework_metrics' in report_data:
+        for metric, value in report_data['framework_metrics'].items():
+            metric_display = metric.replace('_', ' ').title()
+            content.append(Paragraph(f"• {metric_display}: {value}", styles['Normal']))
+    if 'alignment_issues' in report_data:
+        content.append(Paragraph("<b>Alignment Issues</b>", styles['Heading3']))
+        for issue in report_data['alignment_issues']:
+            content.append(Paragraph(f"Issue: {issue.get('issue', '')}", styles['Normal']))
+            content.append(Paragraph(f"Severity: {issue.get('severity', '')}", styles['Normal']))
+            content.append(Paragraph(f"Status: {issue.get('status', '')}", styles['Normal']))
+            content.append(Paragraph(f"Details: {issue.get('details', '')}", styles['Normal']))
+            content.append(Paragraph("<br/>", styles['Normal']))
+    if 'recommendations' in report_data:
+        content.append(Paragraph("<b>Recommendations</b>", styles['Heading3']))
+        for i, rec in enumerate(report_data['recommendations'], 1):
+            content.append(Paragraph(f"{i}. {rec}", styles['Normal']))
+    return content
+
+def _generate_data_lineage_content(report_data, styles):
+    content = []
+    content.append(Paragraph("<b>Data Lineage Report</b>", styles['Heading2']))
+    content.append(Paragraph("<br/>", styles['Normal']))
+    if 'lineage_metrics' in report_data:
+        for metric, value in report_data['lineage_metrics'].items():
+            metric_display = metric.replace('_', ' ').title()
+            content.append(Paragraph(f"• {metric_display}: {value}", styles['Normal']))
+    if 'lineage_issues' in report_data:
+        content.append(Paragraph("<b>Lineage Issues</b>", styles['Heading3']))
+        for issue in report_data['lineage_issues']:
+            content.append(Paragraph(f"Issue: {issue.get('issue', '')}", styles['Normal']))
+            content.append(Paragraph(f"Severity: {issue.get('severity', '')}", styles['Normal']))
+            content.append(Paragraph(f"Status: {issue.get('status', '')}", styles['Normal']))
+            content.append(Paragraph(f"Details: {issue.get('details', '')}", styles['Normal']))
+            content.append(Paragraph("<br/>", styles['Normal']))
+    if 'recommendations' in report_data:
+        content.append(Paragraph("<b>Recommendations</b>", styles['Heading3']))
+        for i, rec in enumerate(report_data['recommendations'], 1):
+            content.append(Paragraph(f"{i}. {rec}", styles['Normal']))
+    return content
+
+def _generate_workflow_analysis_content(report_data, styles):
+    content = []
+    content.append(Paragraph("<b>Workflow Analysis Report</b>", styles['Heading2']))
+    content.append(Paragraph("<br/>", styles['Normal']))
+    if 'workflow_metrics' in report_data:
+        for metric, value in report_data['workflow_metrics'].items():
+            metric_display = metric.replace('_', ' ').title()
+            content.append(Paragraph(f"• {metric_display}: {value}", styles['Normal']))
+    if 'workflow_issues' in report_data:
+        content.append(Paragraph("<b>Workflow Issues</b>", styles['Heading3']))
+        for issue in report_data['workflow_issues']:
+            content.append(Paragraph(f"Issue: {issue.get('issue', '')}", styles['Normal']))
+            content.append(Paragraph(f"Severity: {issue.get('severity', '')}", styles['Normal']))
+            content.append(Paragraph(f"Status: {issue.get('status', '')}", styles['Normal']))
+            content.append(Paragraph(f"Details: {issue.get('details', '')}", styles['Normal']))
+            content.append(Paragraph("<br/>", styles['Normal']))
+    if 'recommendations' in report_data:
+        content.append(Paragraph("<b>Recommendations</b>", styles['Heading3']))
+        for i, rec in enumerate(report_data['recommendations'], 1):
+            content.append(Paragraph(f"{i}. {rec}", styles['Normal']))
+    return content
+
+def _generate_architecture_analysis_content(report_data, styles):
+    content = []
+    content.append(Paragraph("<b>Architecture Analysis Report</b>", styles['Heading2']))
+    content.append(Paragraph("<br/>", styles['Normal']))
+    if 'architecture_metrics' in report_data:
+        for metric, value in report_data['architecture_metrics'].items():
+            metric_display = metric.replace('_', ' ').title()
+            content.append(Paragraph(f"• {metric_display}: {value}", styles['Normal']))
+    if 'architecture_issues' in report_data:
+        content.append(Paragraph("<b>Architecture Issues</b>", styles['Heading3']))
+        for issue in report_data['architecture_issues']:
+            content.append(Paragraph(f"Issue: {issue.get('issue', '')}", styles['Normal']))
+            content.append(Paragraph(f"Severity: {issue.get('severity', '')}", styles['Normal']))
+            content.append(Paragraph(f"Status: {issue.get('status', '')}", styles['Normal']))
+            content.append(Paragraph(f"Details: {issue.get('details', '')}", styles['Normal']))
+            content.append(Paragraph("<br/>", styles['Normal']))
+    if 'recommendations' in report_data:
+        content.append(Paragraph("<b>Recommendations</b>", styles['Heading3']))
+        for i, rec in enumerate(report_data['recommendations'], 1):
+            content.append(Paragraph(f"{i}. {rec}", styles['Normal']))
+    return content
+
+def _generate_validation_rules_content(report_data, styles):
+    content = []
+    content.append(Paragraph("<b>Validation Rules Report</b>", styles['Heading2']))
+    content.append(Paragraph("<br/>", styles['Normal']))
+    if 'validation_metrics' in report_data:
+        for metric, value in report_data['validation_metrics'].items():
+            metric_display = metric.replace('_', ' ').title()
+            content.append(Paragraph(f"• {metric_display}: {value}", styles['Normal']))
+    if 'validation_issues' in report_data:
+        content.append(Paragraph("<b>Validation Issues</b>", styles['Heading3']))
+        for issue in report_data['validation_issues']:
+            content.append(Paragraph(f"Issue: {issue.get('issue', '')}", styles['Normal']))
+            content.append(Paragraph(f"Severity: {issue.get('severity', '')}", styles['Normal']))
+            content.append(Paragraph(f"Status: {issue.get('status', '')}", styles['Normal']))
+            content.append(Paragraph(f"Details: {issue.get('details', '')}", styles['Normal']))
+            content.append(Paragraph("<br/>", styles['Normal']))
+    if 'recommendations' in report_data:
+        content.append(Paragraph("<b>Recommendations</b>", styles['Heading3']))
+        for i, rec in enumerate(report_data['recommendations'], 1):
+            content.append(Paragraph(f"{i}. {rec}", styles['Normal']))
+    return content
+
+def _generate_rule_performance_content(report_data, styles):
+    content = []
+    content.append(Paragraph("<b>Rule Performance Report</b>", styles['Heading2']))
+    content.append(Paragraph("<br/>", styles['Normal']))
+    if 'performance_metrics' in report_data:
+        for metric, value in report_data['performance_metrics'].items():
+            metric_display = metric.replace('_', ' ').title()
+            content.append(Paragraph(f"• {metric_display}: {value}", styles['Normal']))
+    if 'performance_issues' in report_data:
+        content.append(Paragraph("<b>Performance Issues</b>", styles['Heading3']))
+        for issue in report_data['performance_issues']:
+            content.append(Paragraph(f"Issue: {issue.get('issue', '')}", styles['Normal']))
+            content.append(Paragraph(f"Severity: {issue.get('severity', '')}", styles['Normal']))
+            content.append(Paragraph(f"Status: {issue.get('status', '')}", styles['Normal']))
+            content.append(Paragraph(f"Details: {issue.get('details', '')}", styles['Normal']))
+            content.append(Paragraph("<br/>", styles['Normal']))
+    if 'recommendations' in report_data:
+        content.append(Paragraph("<b>Recommendations</b>", styles['Heading3']))
+        for i, rec in enumerate(report_data['recommendations'], 1):
+            content.append(Paragraph(f"{i}. {rec}", styles['Normal']))
     return content
 
 # Additional report endpoints for remaining functions
