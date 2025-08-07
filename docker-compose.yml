@@ -137,9 +137,9 @@ services:
     ports:
       - "8081:8080"
 
-  # PostgreSQL Database
+  # PostgreSQL Database with pgvector
   postgres:
-    image: postgres:15-alpine
+    image: pgvector/pgvector:pg15
     container_name: sap-postgres
     environment:
       - POSTGRES_DB=${DB_NAME:-sap_data_quality}
@@ -156,6 +156,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init-db:/docker-entrypoint-initdb.d
+      - ./pgvector-init:/docker-entrypoint-initdb.d
     ports:
       - "5432:5432"
 

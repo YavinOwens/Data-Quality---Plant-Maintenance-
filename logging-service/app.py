@@ -51,6 +51,9 @@ from functools import lru_cache
 import threading
 import time
 
+# Import vector service for AI context
+from vector_service import VectorService
+
 # Configure structured logging
 structlog.configure(
     processors=[
@@ -1079,6 +1082,18 @@ Answer based on the data quality metrics above."""
 # Initialize reporter
 reporter = DataQualityReporter()
 
+# Database configuration for vector service
+db_config = {
+    'host': os.getenv('DB_HOST', 'localhost'),
+    'database': os.getenv('DB_NAME', 'sap_data_quality'),
+    'user': os.getenv('DB_USER', 'sap_user'),
+    'password': os.getenv('DB_PASSWORD', 'your_db_password'),
+    'port': 5432
+}
+
+# Initialize vector service
+vector_service = VectorService(db_config)
+
 # API Resources
 class ValidationSummaryResource(Resource):
     """API endpoint for validation summary"""
@@ -1167,6 +1182,98 @@ class QualityReportResource(Resource):
 api.add_resource(ValidationSummaryResource, '/api/validation-summary')
 api.add_resource(RecentIssuesResource, '/api/recent-issues')
 api.add_resource(QualityReportResource, '/api/quality-report')
+
+# Vector service endpoints
+@app.route('/api/vector/search', methods=['POST'])
+@login_required
+@limiter.limit("50 per hour")
+def semantic_search():
+    """Perform semantic search"""
+    try:
+        data = request.get_json()
+        query = data.get('query', '')
+        data_types = data.get('data_types', None)
+        similarity_threshold = data.get('similarity_threshold', 0.7)
+        limit = data.get('limit', 10)
+        
+        if not query:
+            return jsonify({'error': 'Query is required'}), 400
+        
+        results = vector_service.semantic_search(query, data_types, similarity_threshold, limit)
+        
+        return jsonify({
+            'status': 'success',
+            'data': results,
+            'query': query,
+            'count': len(results)
+        })
+        
+    except Exception as e:
+        logger.error(f"Semantic search failed: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/vector/embeddings/populate', methods=['POST'])
+@login_required
+@require_role('admin')
+@limiter.limit("10 per hour")
+def populate_embeddings():
+    """Populate embeddings from existing data"""
+    try:
+        counts = vector_service.populate_embeddings_from_data()
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Embeddings populated successfully',
+            'counts': counts
+        })
+        
+    except Exception as e:
+        logger.error(f"Failed to populate embeddings: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/vector/embeddings/stats')
+@login_required
+@limiter.limit("30 per hour")
+def get_embedding_stats():
+    """Get embedding statistics"""
+    try:
+        stats = vector_service.get_embedding_stats()
+        
+        return jsonify({
+            'status': 'success',
+            'data': stats
+        })
+        
+    except Exception as e:
+        logger.error(f"Failed to get embedding stats: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/vector/status')
+@login_required
+@limiter.limit("30 per hour")
+def get_vector_status():
+    """Get vector service status and capabilities"""
+    try:
+        stats = vector_service.get_embedding_stats()
+        model_status = vector_service.model is not None
+        
+        return jsonify({
+            'status': 'success',
+            'data': {
+                'model_loaded': model_status,
+                'embeddings_count': sum(stats.get(data_type, {}).get('count', 0) for data_type in stats),
+                'data_types': list(stats.keys()),
+                'capabilities': {
+                    'semantic_search': True,
+                    'embedding_generation': model_status,
+                    'context_enhancement': True
+                }
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Failed to get vector status: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 # Security API endpoints
 @app.route('/api/security/events')
@@ -3760,7 +3867,7 @@ def export_pdf():
 @login_required
 @limiter.limit("30 per minute")
 def chat():
-    """Chat endpoint for AI assistant"""
+    """Chat endpoint for AI assistant with vector-enhanced context"""
     try:
         data = request.get_json()
         user_message = data.get('message', '')
@@ -3771,12 +3878,27 @@ def chat():
                 'message': 'No message provided'
             }), 400
         
+        # Get relevant context using vector search
+        relevant_context = vector_service.get_ai_context(user_message, max_results=5)
+        
         # Get all data context for the AI
         reporter = DataQualityReporter()
         context_data = reporter.get_all_data_context()
         
-        # Send to Ollama
+        # Enhance context with vector search results
+        if relevant_context:
+            context_data['vector_context'] = relevant_context
+            context_data['vector_search_results'] = len(relevant_context)
+        
+        # Send to Ollama with enhanced context
         response = reporter.chat_with_ollama(user_message)
+        
+        # Add vector search metadata to response
+        if relevant_context:
+            response['vector_context'] = {
+                'results_count': len(relevant_context),
+                'top_results': relevant_context[:3]  # Include top 3 results
+            }
         
         return jsonify(response)
         
