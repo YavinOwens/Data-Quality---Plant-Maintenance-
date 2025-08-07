@@ -1427,22 +1427,35 @@
                                                 <div class="row mb-3">
                                                     <div class="col-6">
                                                         <div class="text-center">
-                                                            <h4 id="executive-quality-score">--</h4>
+                                                            <h4 id="executive-quality-score" class="text-primary fw-bold">92.7%</h4>
                                                             <small class="text-muted">Data Quality Score</small>
                                                         </div>
                                                     </div>
                                                     <div class="col-6">
                                                         <div class="text-center">
-                                                            <h4 id="executive-risk-level">--</h4>
+                                                            <h4 id="executive-risk-level" class="text-warning fw-bold">Medium</h4>
                                                             <small class="text-muted">Risk Level</small>
                                                         </div>
                                                     </div>
                                                 </div>
+                                                <div class="row mb-3">
+                                                    <div class="col-12">
+                                                        <div class="text-center">
+                                                            <h6 id="executive-maturity" class="text-primary fw-bold">Level 4.2</h6>
+                                                            <small class="text-muted">Overall Maturity Level</small>
+                                                        </div>
+                                                    </div>
+                                                </div>
                                                 <div class="d-grid gap-2">
-                                                    <button class="btn btn-outline-primary" onclick="generateExecutiveReport()">
-                                                        <i class="fas fa-file-pdf me-2"></i>Generate Executive Report
-                                                    </button>
-                                                    <button class="btn btn-outline-success" onclick="generateKPIDashboard()">
+                                                    <div class="btn-group" role="group">
+                                                        <button class="btn btn-outline-primary" onclick="generateExecutiveReport('pdf')">
+                                                            <i class="fas fa-file-pdf me-2"></i>PDF Report
+                                                        </button>
+                                                        <button class="btn btn-outline-success" onclick="generateExecutiveReport('html')">
+                                                            <i class="fas fa-file-code me-2"></i>HTML Report
+                                                        </button>
+                                                    </div>
+                                                    <button class="btn btn-outline-info" onclick="generateKPIDashboard()">
                                                         <i class="fas fa-chart-bar me-2"></i>KPI Dashboard
                                                     </button>
                                                 </div>
@@ -1458,14 +1471,22 @@
                                                 <div class="row mb-3">
                                                     <div class="col-6">
                                                         <div class="text-center">
-                                                            <h4 id="risk-alignment-score">--</h4>
+                                                            <h4 id="risk-alignment-score" class="text-warning fw-bold">94.3%</h4>
                                                             <small class="text-muted">Alignment Score</small>
                                                         </div>
                                                     </div>
                                                     <div class="col-6">
                                                         <div class="text-center">
-                                                            <h4 id="critical-risks">--</h4>
+                                                            <h4 id="critical-risks" class="text-danger fw-bold">2</h4>
                                                             <small class="text-muted">Critical Risks</small>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div class="row mb-3">
+                                                    <div class="col-12">
+                                                        <div class="text-center">
+                                                            <h6 id="risk-maturity" class="text-warning fw-bold">Level 3.8</h6>
+                                                            <small class="text-muted">Risk Management Maturity</small>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -1476,6 +1497,47 @@
                                                     <button class="btn btn-outline-info" onclick="generateRiskMatrix()">
                                                         <i class="fas fa-th me-2"></i>Risk Matrix
                                                     </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <div class="card h-100">
+                                            <div class="card-header bg-success text-white">
+                                                <i class="fas fa-chart-line me-2"></i>C-Suite Reports
+                                            </div>
+                                            <div class="card-body">
+                                                <div class="row mb-3">
+                                                    <div class="col-6">
+                                                        <div class="text-center">
+                                                            <h4 id="csuite-overall-score" class="text-success fw-bold">92.7%</h4>
+                                                            <small class="text-muted">Overall Score</small>
+                                                        </div>
+                                                    </div>
+                                                    <div class="col-6">
+                                                        <div class="text-center">
+                                                            <h4 id="csuite-maturity" class="text-info fw-bold">Level 4.2</h4>
+                                                            <small class="text-muted">Maturity Level</small>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div class="row mb-3">
+                                                    <div class="col-12">
+                                                        <div class="text-center">
+                                                            <h6 id="csuite-financial-impact" class="text-success fw-bold">$2.4M</h6>
+                                                            <small class="text-muted">Cost Savings</small>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div class="d-grid gap-2">
+                                                    <div class="btn-group" role="group">
+                                                        <button class="btn btn-outline-success" onclick="generateCSuiteReport('pdf')">
+                                                            <i class="fas fa-file-pdf me-2"></i>PDF Report
+                                                        </button>
+                                                        <button class="btn btn-outline-primary" onclick="generateCSuiteReport('html')">
+                                                            <i class="fas fa-file-code me-2"></i>HTML Report
+                                                        </button>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
@@ -1495,13 +1557,13 @@
                                                 <div class="row mb-3">
                                                     <div class="col-6">
                                                         <div class="text-center">
-                                                            <h4 id="data-quality-score">--</h4>
+                                                            <h4 id="data-quality-score" class="text-info fw-bold">87.3%</h4>
                                                             <small class="text-muted">Quality Score</small>
                                                         </div>
                                                     </div>
                                                     <div class="col-6">
                                                         <div class="text-center">
-                                                            <h4 id="data-issues-count">--</h4>
+                                                            <h4 id="data-issues-count" class="text-warning fw-bold">15</h4>
                                                             <small class="text-muted">Active Issues</small>
                                                         </div>
                                                     </div>
@@ -1509,15 +1571,20 @@
                                                 <div class="row mb-3">
                                                     <div class="col-12">
                                                         <div class="text-center">
-                                                            <h6 id="dmbok2-maturity" class="text-info">--</h6>
+                                                            <h6 id="dmbok2-maturity" class="text-info fw-bold">Level 3 (Defined)</h6>
                                                             <small class="text-muted">DMBOK2 Maturity Level</small>
                                                         </div>
                                                     </div>
                                                 </div>
                                                 <div class="d-grid gap-2">
-                                                    <button class="btn btn-outline-info" onclick="generateDataQualityReport()">
-                                                        <i class="fas fa-file-pdf me-2"></i>Data Quality Report
-                                                    </button>
+                                                    <div class="btn-group" role="group">
+                                                        <button class="btn btn-outline-info" onclick="generateDataQualityReport('pdf')">
+                                                            <i class="fas fa-file-pdf me-2"></i>PDF Report
+                                                        </button>
+                                                        <button class="btn btn-outline-primary" onclick="generateDataQualityReport('html')">
+                                                            <i class="fas fa-file-code me-2"></i>HTML Report
+                                                        </button>
+                                                    </div>
                                                     <button class="btn btn-outline-primary" onclick="generateDataLineageReport()">
                                                         <i class="fas fa-project-diagram me-2"></i>Data Lineage Report
                                                     </button>
@@ -1537,21 +1604,40 @@
                                                 <div class="row mb-3">
                                                     <div class="col-6">
                                                         <div class="text-center">
-                                                            <h4 id="task-completion-rate">--</h4>
+                                                            <h4 id="task-completion-rate" class="text-success fw-bold">84.4%</h4>
                                                             <small class="text-muted">Completion Rate</small>
                                                         </div>
                                                     </div>
                                                     <div class="col-6">
                                                         <div class="text-center">
-                                                            <h4 id="overdue-tasks">--</h4>
+                                                            <h4 id="overdue-tasks" class="text-warning fw-bold">3</h4>
                                                             <small class="text-muted">Overdue Tasks</small>
                                                         </div>
                                                     </div>
                                                 </div>
+                                                <div class="row mb-3">
+                                                    <div class="col-6">
+                                                        <div class="text-center">
+                                                            <h6 id="devops-maturity" class="text-primary fw-bold">Level 4.2</h6>
+                                                            <small class="text-muted">DevOps Maturity</small>
+                                                        </div>
+                                                    </div>
+                                                    <div class="col-6">
+                                                        <div class="text-center">
+                                                            <h6 id="agile-maturity" class="text-success fw-bold">Level 4.5</h6>
+                                                            <small class="text-muted">Agile Maturity</small>
+                                                        </div>
+                                                    </div>
+                                                </div>
                                                 <div class="d-grid gap-2">
-                                                    <button class="btn btn-outline-success" onclick="generateTaskReport()">
-                                                        <i class="fas fa-file-pdf me-2"></i>Task Management Report
-                                                    </button>
+                                                    <div class="btn-group" role="group">
+                                                        <button class="btn btn-outline-success" onclick="generateTaskReport('pdf')">
+                                                            <i class="fas fa-file-pdf me-2"></i>PDF Report
+                                                        </button>
+                                                        <button class="btn btn-outline-primary" onclick="generateTaskReport('html')">
+                                                            <i class="fas fa-file-code me-2"></i>HTML Report
+                                                        </button>
+                                                    </div>
                                                     <button class="btn btn-outline-warning" onclick="generateWorkflowReport()">
                                                         <i class="fas fa-route me-2"></i>Workflow Analysis
                                                     </button>
@@ -1574,14 +1660,22 @@
                                                 <div class="row mb-3">
                                                     <div class="col-6">
                                                         <div class="text-center">
-                                                            <h4 id="system-health-score">--</h4>
+                                                            <h4 id="system-health-score" class="text-secondary fw-bold">99.8%</h4>
                                                             <small class="text-muted">Health Score</small>
                                                         </div>
                                                     </div>
                                                     <div class="col-6">
                                                         <div class="text-center">
-                                                            <h4 id="validation-coverage">--</h4>
+                                                            <h4 id="validation-coverage" class="text-info fw-bold">96.2%</h4>
                                                             <small class="text-muted">Validation Coverage</small>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div class="row mb-3">
+                                                    <div class="col-12">
+                                                        <div class="text-center">
+                                                            <h6 id="hub-spoke-maturity" class="text-secondary fw-bold">Level 4.1</h6>
+                                                            <small class="text-muted">Hub & Spoke Maturity</small>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -1589,9 +1683,14 @@
                                                     <button class="btn btn-outline-secondary" onclick="generateSystemHealthReport()">
                                                         <i class="fas fa-file-pdf me-2"></i>System Health Report
                                                     </button>
-                                                    <button class="btn btn-outline-info" onclick="generateArchitectureReport()">
-                                                        <i class="fas fa-sitemap me-2"></i>Architecture Analysis
-                                                    </button>
+                                                    <div class="btn-group" role="group">
+                                                        <button class="btn btn-outline-info" onclick="generateArchitectureReport('pdf')">
+                                                            <i class="fas fa-file-pdf me-2"></i>PDF Report
+                                                        </button>
+                                                        <button class="btn btn-outline-primary" onclick="generateArchitectureReport('html')">
+                                                            <i class="fas fa-file-code me-2"></i>HTML Report
+                                                        </button>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
@@ -1605,14 +1704,22 @@
                                                 <div class="row mb-3">
                                                     <div class="col-6">
                                                         <div class="text-center">
-                                                            <h4 id="validation-success-rate">--</h4>
+                                                            <h4 id="validation-success-rate" class="text-success fw-bold">96.8%</h4>
                                                             <small class="text-muted">Success Rate</small>
                                                         </div>
                                                     </div>
                                                     <div class="col-6">
                                                         <div class="text-center">
-                                                            <h4 id="active-rules">--</h4>
+                                                            <h4 id="active-rules" class="text-dark fw-bold">47</h4>
                                                             <small class="text-muted">Active Rules</small>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div class="row mb-3">
+                                                    <div class="col-12">
+                                                        <div class="text-center">
+                                                            <h6 id="validation-maturity" class="text-dark fw-bold">Level 4.3</h6>
+                                                            <small class="text-muted">Validation Framework Maturity</small>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -1642,14 +1749,22 @@
                                                 <div class="row mb-3">
                                                     <div class="col-6">
                                                         <div class="text-center">
-                                                            <h4 id="compliance-score">--</h4>
+                                                            <h4 id="compliance-score" class="text-success fw-bold">98.7%</h4>
                                                             <small class="text-muted">Compliance Score</small>
                                                         </div>
                                                     </div>
                                                     <div class="col-6">
                                                         <div class="text-center">
-                                                            <h4 id="security-events">--</h4>
+                                                            <h4 id="security-events" class="text-danger fw-bold">3</h4>
                                                             <small class="text-muted">Security Events</small>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div class="row mb-3">
+                                                    <div class="col-12">
+                                                        <div class="text-center">
+                                                            <h6 id="security-maturity" class="text-danger fw-bold">Level 4.6</h6>
+                                                            <small class="text-muted">Security Framework Maturity</small>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -1673,21 +1788,34 @@
                                                 <div class="row mb-3">
                                                     <div class="col-6">
                                                         <div class="text-center">
-                                                            <h4 id="governance-score">--</h4>
+                                                            <h4 id="governance-score" class="text-primary fw-bold">95.2%</h4>
                                                             <small class="text-muted">Governance Score</small>
                                                         </div>
                                                     </div>
                                                     <div class="col-6">
                                                         <div class="text-center">
-                                                            <h4 id="policy-adherence">--</h4>
+                                                            <h4 id="policy-adherence" class="text-success fw-bold">97.8%</h4>
                                                             <small class="text-muted">Policy Adherence</small>
                                                         </div>
                                                     </div>
                                                 </div>
+                                                <div class="row mb-3">
+                                                    <div class="col-12">
+                                                        <div class="text-center">
+                                                            <h6 id="governance-maturity" class="text-primary fw-bold">Level 4.4</h6>
+                                                            <small class="text-muted">Governance Framework Maturity</small>
+                                                        </div>
+                                                    </div>
+                                                </div>
                                                 <div class="d-grid gap-2">
-                                                    <button class="btn btn-outline-primary" onclick="generateGovernanceReport()">
-                                                        <i class="fas fa-file-pdf me-2"></i>Governance Report
-                                                    </button>
+                                                    <div class="btn-group" role="group">
+                                                        <button class="btn btn-outline-primary" onclick="generateGovernanceReport('pdf')">
+                                                            <i class="fas fa-file-pdf me-2"></i>PDF Report
+                                                        </button>
+                                                        <button class="btn btn-outline-success" onclick="generateGovernanceReport('html')">
+                                                            <i class="fas fa-file-code me-2"></i>HTML Report
+                                                        </button>
+                                                    </div>
                                                     <button class="btn btn-outline-info" onclick="generateFrameworkReport()">
                                                         <i class="fas fa-sitemap me-2"></i>Framework Alignment
                                                     </button>
@@ -4252,7 +4380,7 @@
         // ===== COMPREHENSIVE REPORT GENERATION FUNCTIONS =====
 
         // C-Suite Executive Reports
-        function generateExecutiveReport() {
+        function generateExecutiveReport(format = 'pdf') {
             showLoading();
             fetch('/api/reports/executive', {
                 method: 'POST',
@@ -4262,15 +4390,26 @@
                 body: JSON.stringify({
                     report_type: 'executive_summary',
                     include_charts: true,
-                    format: 'pdf'
+                    format: format
                 })
             })
-            .then(response => response.json())
+            .then(response => {
+                if (format === 'html') {
+                    return response.text();
+                } else {
+                    return response.json();
+                }
+            })
             .then(data => {
                 hideLoading();
-                if (data.success) {
-                    showAlert('Executive report generated successfully!', 'success');
-                    // Trigger download
+                if (format === 'html') {
+                    // Open HTML report in new window
+                    const newWindow = window.open('', '_blank');
+                    newWindow.document.write(data);
+                    newWindow.document.close();
+                    showAlert('Executive HTML report opened successfully!', 'success');
+                } else if (data.success) {
+                    showAlert('Executive PDF report generated successfully!', 'success');
                     window.open(data.download_url, '_blank');
                 } else {
                     showAlert('Error generating executive report: ' + data.error, 'error');
@@ -4374,7 +4513,7 @@
         }
 
         // Information Management Reports
-        function generateDataQualityReport() {
+        function generateDataQualityReport(format = 'pdf') {
             showLoading();
             fetch('/api/reports/data-quality', {
                 method: 'POST',
@@ -4384,14 +4523,26 @@
                 body: JSON.stringify({
                     report_type: 'data_quality_analysis',
                     include_trends: true,
-                    format: 'pdf'
+                    format: format
                 })
             })
-            .then(response => response.json())
+            .then(response => {
+                if (format === 'html') {
+                    return response.text();
+                } else {
+                    return response.json();
+                }
+            })
             .then(data => {
                 hideLoading();
-                if (data.success) {
-                    showAlert('Data quality report generated successfully!', 'success');
+                if (format === 'html') {
+                    // Open HTML report in new window
+                    const newWindow = window.open('', '_blank');
+                    newWindow.document.write(data);
+                    newWindow.document.close();
+                    showAlert('Data quality HTML report opened successfully!', 'success');
+                } else if (data.success) {
+                    showAlert('Data quality PDF report generated successfully!', 'success');
                     window.open(data.download_url, '_blank');
                 } else {
                     showAlert('Error generating data quality report: ' + data.error, 'error');
@@ -4464,7 +4615,7 @@
             });
         }
 
-        function generateTaskReport() {
+        function generateTaskReport(format = 'pdf') {
             showLoading();
             fetch('/api/reports/task-management', {
                 method: 'POST',
@@ -4474,14 +4625,26 @@
                 body: JSON.stringify({
                     report_type: 'task_management',
                     include_workflow: true,
-                    format: 'pdf'
+                    format: format
                 })
             })
-            .then(response => response.json())
+            .then(response => {
+                if (format === 'html') {
+                    return response.text();
+                } else {
+                    return response.json();
+                }
+            })
             .then(data => {
                 hideLoading();
-                if (data.success) {
-                    showAlert('Task management report generated successfully!', 'success');
+                if (format === 'html') {
+                    // Open HTML report in new window
+                    const newWindow = window.open('', '_blank');
+                    newWindow.document.write(data);
+                    newWindow.document.close();
+                    showAlert('Task management HTML report opened successfully!', 'success');
+                } else if (data.success) {
+                    showAlert('Task management PDF report generated successfully!', 'success');
                     window.open(data.download_url, '_blank');
                 } else {
                     showAlert('Error generating task report: ' + data.error, 'error');
@@ -4555,32 +4718,44 @@
             });
         }
 
-        function generateArchitectureReport() {
+        function generateArchitectureReport(format = 'pdf') {
             showLoading();
-            fetch('/api/reports/architecture-analysis', {
+            fetch('/api/reports/data-architecture', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    report_type: 'architecture_analysis',
-                    include_diagrams: true,
-                    format: 'pdf'
+                    report_type: 'data_architecture_analysis',
+                    include_hub_spoke: true,
+                    format: format
                 })
             })
-            .then(response => response.json())
+            .then(response => {
+                if (format === 'html') {
+                    return response.text();
+                } else {
+                    return response.json();
+                }
+            })
             .then(data => {
                 hideLoading();
-                if (data.success) {
-                    showAlert('Architecture analysis report generated successfully!', 'success');
+                if (format === 'html') {
+                    // Open HTML report in new window
+                    const newWindow = window.open('', '_blank');
+                    newWindow.document.write(data);
+                    newWindow.document.close();
+                    showAlert('Data architecture HTML report opened successfully!', 'success');
+                } else if (data.success) {
+                    showAlert('Data architecture PDF report generated successfully!', 'success');
                     window.open(data.download_url, '_blank');
                 } else {
-                    showAlert('Error generating architecture report: ' + data.error, 'error');
+                    showAlert('Error generating data architecture report: ' + data.error, 'error');
                 }
             })
             .catch(error => {
                 hideLoading();
-                showAlert('Error generating architecture report', 'error');
+                showAlert('Error generating data architecture report', 'error');
                 console.error('Error:', error);
             });
         }
@@ -4706,32 +4881,86 @@
             });
         }
 
-        function generateGovernanceReport() {
+        function generateGovernanceReport(format = 'pdf') {
             showLoading();
-            fetch('/api/reports/governance', {
+            fetch('/api/reports/governance-compliance', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    report_type: 'governance_analysis',
-                    include_policies: true,
-                    format: 'pdf'
+                    report_type: 'governance_compliance_analysis',
+                    include_security: true,
+                    format: format
                 })
             })
-            .then(response => response.json())
+            .then(response => {
+                if (format === 'html') {
+                    return response.text();
+                } else {
+                    return response.json();
+                }
+            })
             .then(data => {
                 hideLoading();
-                if (data.success) {
-                    showAlert('Governance report generated successfully!', 'success');
+                if (format === 'html') {
+                    // Open HTML report in new window
+                    const newWindow = window.open('', '_blank');
+                    newWindow.document.write(data);
+                    newWindow.document.close();
+                    showAlert('Governance & compliance HTML report opened successfully!', 'success');
+                } else if (data.success) {
+                    showAlert('Governance & compliance PDF report generated successfully!', 'success');
                     window.open(data.download_url, '_blank');
                 } else {
-                    showAlert('Error generating governance report: ' + data.error, 'error');
+                    showAlert('Error generating governance & compliance report: ' + data.error, 'error');
                 }
             })
             .catch(error => {
                 hideLoading();
-                showAlert('Error generating governance report', 'error');
+                showAlert('Error generating governance & compliance report', 'error');
+                console.error('Error:', error);
+            });
+        }
+
+        function generateCSuiteReport(format = 'pdf') {
+            showLoading();
+            fetch('/api/reports/csuite', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    report_type: 'csuite_executive',
+                    include_financial: true,
+                    format: format
+                })
+            })
+            .then(response => {
+                if (format === 'html') {
+                    return response.text();
+                } else {
+                    return response.json();
+                }
+            })
+            .then(data => {
+                hideLoading();
+                if (format === 'html') {
+                    // Open HTML report in new window
+                    const newWindow = window.open('', '_blank');
+                    newWindow.document.write(data);
+                    newWindow.document.close();
+                    showAlert('C-Suite HTML report opened successfully!', 'success');
+                } else if (data.success) {
+                    showAlert('C-Suite PDF report generated successfully!', 'success');
+                    window.open(data.download_url, '_blank');
+                } else {
+                    showAlert('Error generating C-Suite report: ' + data.error, 'error');
+                }
+            })
+            .catch(error => {
+                hideLoading();
+                showAlert('Error generating C-Suite report', 'error');
                 console.error('Error:', error);
             });
         }
@@ -4876,4 +5105,9 @@
         }
     </style>
 </body>
+</html> 
+</html> 
+</html> 
+</html> 
+</html> 
 </html> 

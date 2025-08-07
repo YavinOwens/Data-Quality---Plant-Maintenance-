@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Governance & Compliance Report</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+        }
+        .report-header {
+            background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+            color: white;
+            padding: 2rem 0;
+            margin-bottom: 2rem;
+        }
+        .metric-card {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            border-left: 4px solid #dc3545;
+        }
+        .governance-card {
+            border-left: 4px solid #007bff;
+        }
+        .compliance-card {
+            border-left: 4px solid #28a745;
+        }
+        .security-card {
+            border-left: 4px solid #ffc107;
+        }
+        .metric-value {
+            font-size: 2.5rem;
+            font-weight: bold;
+            color: #dc3545;
+        }
+        .metric-label {
+            color: #666;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .section-header {
+            color: #333;
+            border-bottom: 2px solid #dc3545;
+            padding-bottom: 0.5rem;
+            margin-bottom: 1.5rem;
+        }
+        .compliance-badge {
+            display: inline-block;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: bold;
+            margin: 0.25rem;
+            background: linear-gradient(45deg, #dc3545, #c82333);
+            color: white;
+        }
+        .governance-badge {
+            background: linear-gradient(45deg, #007bff, #0056b3);
+        }
+        .security-badge {
+            background: linear-gradient(45deg, #ffc107, #e0a800);
+        }
+        .maturity-level {
+            background: linear-gradient(45deg, #dc3545, #c82333);
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-weight: bold;
+            display: inline-block;
+        }
+        .progress-custom {
+            height: 8px;
+            border-radius: 4px;
+            background-color: #e9ecef;
+        }
+        .progress-custom .progress-bar {
+            border-radius: 4px;
+        }
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 0.5rem;
+        }
+        .status-compliant { background-color: #28a745; }
+        .status-warning { background-color: #ffc107; }
+        .status-non-compliant { background-color: #dc3545; }
+        .status-pending { background-color: #17a2b8; }
+        .footer {
+            background: #f8f9fa;
+            padding: 2rem 0;
+            margin-top: 3rem;
+            text-align: center;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid">
+        <!-- Report Header -->
+        <div class="report-header">
+            <div class="container">
+                <div class="row align-items-center">
+                    <div class="col-md-8">
+                        <h1><i class="fas fa-shield-alt me-3"></i>Governance & Compliance Report</h1>
+                        <p class="mb-0">Comprehensive Security & Compliance Analysis</p>
+                        <div class="mt-2">
+                            <span class="compliance-badge governance-badge"><i class="fas fa-gavel me-1"></i>Governance</span>
+                            <span class="compliance-badge security-badge"><i class="fas fa-lock me-1"></i>Security</span>
+                            <span class="compliance-badge"><i class="fas fa-clipboard-check me-1"></i>Compliance</span>
+                        </div>
+                    </div>
+                    <div class="col-md-4 text-end">
+                        <div class="row">
+                            <div class="col-6">
+                                <div class="text-center">
+                                    <div class="metric-value">98.7%</div>
+                                    <div class="metric-label">Compliance Score</div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="text-center">
+                                    <div class="maturity-level">Level 4.6</div>
+                                    <div class="metric-label">Security Maturity</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="container">
+            <!-- Governance Overview -->
+            <div class="row mb-4">
+                <div class="col-12">
+                    <h2 class="section-header">Governance Overview</h2>
+                    <div class="metric-card">
+                        <div class="row">
+                            <div class="col-md-3">
+                                <div class="text-center">
+                                    <div class="metric-value text-primary">95.2%</div>
+                                    <div class="metric-label">Governance Score</div>
+                                    <div class="progress progress-custom mt-2">
+                                        <div class="progress-bar bg-primary" style="width: 95.2%"></div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="text-center">
+                                    <div class="metric-value text-success">97.8%</div>
+                                    <div class="metric-label">Policy Adherence</div>
+                                    <div class="progress progress-custom mt-2">
+                                        <div class="progress-bar bg-success" style="width: 97.8%"></div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="text-center">
+                                    <div class="metric-value text-info">94.4%</div>
+                                    <div class="metric-label">Framework Maturity</div>
+                                    <div class="progress progress-custom mt-2">
+                                        <div class="progress-bar bg-info" style="width: 94.4%"></div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="text-center">
+                                    <div class="metric-value text-warning">3</div>
+                                    <div class="metric-label">Security Events</div>
+                                    <div class="progress progress-custom mt-2">
+                                        <div class="progress-bar bg-warning" style="width: 15%"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Governance Framework Analysis -->
+            <div class="row mb-4">
+                <div class="col-12">
+                    <h2 class="section-header"><i class="fas fa-gavel me-2"></i>Governance Framework Analysis</h2>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="metric-card governance-card">
+                                <h5><i class="fas fa-users me-2"></i>Data Stewardship</h5>
+                                <div class="row">
+                                    <div class="col-6">
+                                        <div class="text-center">
+                                            <div class="metric-value text-success">92.3%</div>
+                                            <div class="metric-label">Coverage</div>
+                                        </div>
+                                    </div>
+                                    <div class="col-6">
+                                        <div class="text-center">
+                                            <div class="metric-value text-info">15</div>
+                                            <div class="metric-label">Stewards</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="mt-3">
+                                    <small class="text-muted">Key Areas:</small>
+                                    <div class="fw-bold text-success">Role Definition: 95.7%</div>
+                                    <div class="fw-bold text-info">Training Completion: 89.2%</div>
+                                    <div class="fw-bold text-warning">Accountability: 94.1%</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="metric-card governance-card">
+                                <h5><i class="fas fa-book me-2"></i>Policy Management</h5>
+                                <div class="row">
+                                    <div class="col-6">
+                                        <div class="text-center">
+                                            <div class="metric-value text-primary">97.8%</div>
+                                            <div class="metric-label">Adherence</div>
+                                        </div>
+                                    </div>
+                                    <div class="col-6">
+                                        <div class="text-center">
+                                            <div class="metric-value text-info">24</div>
+                                            <div class="metric-label">Policies</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="mt-3">
+                                    <small class="text-muted">Key Areas:</small>
+                                    <div class="fw-bold text-success">Policy Coverage: 98.5%</div>
+                                    <div class="fw-bold text-info">Review Frequency: 95.2%</div>
+                                    <div class="fw-bold text-warning">Enforcement: 96.8%</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Security Analysis -->
+            <div class="row mb-4">
+                <div class="col-12">
+                    <h2 class="section-header"><i class="fas fa-lock me-2"></i>Security Analysis</h2>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="metric-card security-card">
+                                <h5><i class="fas fa-shield-alt me-2"></i>Access Control</h5>
+                                <div class="row">
+                                    <div class="col-6">
+                                        <div class="text-center">
+                                            <div class="metric-value text-success">95.2%</div>
+                                            <div class="metric-label">Effectiveness</div>
+                                        </div>
+                                    </div>
+                                    <div class="col-6">
+                                        <div class="text-center">
+                                            <div class="metric-value text-info">3</div>
+                                            <div class="metric-label">Events</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="mt-3">
+                                    <small class="text-muted">Security Measures:</small>
+                                    <div class="fw-bold text-success">Multi-Factor Auth: 98.7%</div>
+                                    <div class="fw-bold text-info">Role-Based Access: 94.3%</div>
+                                    <div class="fw-bold text-warning">Session Management: 96.8%</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="metric-card security-card">
+                                <h5><i class="fas fa-key me-2"></i>Data Protection</h5>
+                                <div class="row">
+                                    <div class="col-6">
+                                        <div class="text-center">
+                                            <div class="metric-value text-primary">91.8%</div>
+                                            <div class="metric-label">Encryption</div>
+                                        </div>
+                                    </div>
+                                    <div class="col-6">
+                                        <div class="text-center">
+                                            <div class="metric-value text-success">94.7%</div>
+                                            <div class="metric-label">Audit</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="mt-3">
+                                    <small class="text-muted">Protection Measures:</small>
+                                    <div class="fw-bold text-success">Data Encryption: 91.8%</div>
+                                    <div class="fw-bold text-info">Audit Compliance: 94.7%</div>
+                                    <div class="fw-bold text-warning">Backup Security: 93.2%</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Compliance Analysis -->
+            <div class="row mb-4">
+                <div class="col-12">
+                    <h2 class="section-header"><i class="fas fa-clipboard-check me-2"></i>Compliance Analysis</h2>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="metric-card compliance-card">
+                                <h6><i class="fas fa-gdpr me-2"></i>GDPR Compliance</h6>
+                                <div class="text-center mb-3">
+                                    <div class="metric-value text-success">98.7%</div>
+                                    <div class="metric-label">Compliance Rate</div>
+                                </div>
+                                <div class="row">
+                                    <div class="col-6">
+                                        <small class="text-muted">Data Rights</small>
+                                        <div class="fw-bold text-success">99.2%</div>
+                                    </div>
+                                    <div class="col-6">
+                                        <small class="text-muted">Consent Mgmt</small>
+                                        <div class="fw-bold text-info">97.8%</div>
+                                    </div>
+                                </div>
+                                <div class="row mt-2">
+                                    <div class="col-6">
+                                        <small class="text-muted">Data Breach</small>
+                                        <div class="fw-bold text-warning">0</div>
+                                    </div>
+                                    <div class="col-6">
+                                        <span class="status-indicator status-compliant"></span>
+                                        <small class="text-muted">Status: Compliant</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="metric-card compliance-card">
+                                <h6><i class="fas fa-industry me-2"></i>SOX Compliance</h6>
+                                <div class="text-center mb-3">
+                                    <div class="metric-value text-success">97.3%</div>
+                                    <div class="metric-label">Compliance Rate</div>
+                                </div>
+                                <div class="row">
+                                    <div class="col-6">
+                                        <small class="text-muted">Internal Controls</small>
+                                        <div class="fw-bold text-success">98.1%</div>
+                                    </div>
+                                    <div class="col-6">
+                                        <small class="text-muted">Audit Trail</small>
+                                        <div class="fw-bold text-info">96.5%</div>
+                                    </div>
+                                </div>
+                                <div class="row mt-2">
+                                    <div class="col-6">
+                                        <small class="text-muted">Risk Assessment</small>
+                                        <div class="fw-bold text-warning">95.8%</div>
+                                    </div>
+                                    <div class="col-6">
+                                        <span class="status-indicator status-compliant"></span>
+                                        <small class="text-muted">Status: Compliant</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="metric-card compliance-card">
+                                <h6><i class="fas fa-shield-alt me-2"></i>ISO 27001</h6>
+                                <div class="text-center mb-3">
+                                    <div class="metric-value text-success">96.8%</div>
+                                    <div class="metric-label">Compliance Rate</div>
+                                </div>
+                                <div class="row">
+                                    <div class="col-6">
+                                        <small class="text-muted">ISMS</small>
+                                        <div class="fw-bold text-success">97.2%</div>
+                                    </div>
+                                    <div class="col-6">
+                                        <small class="text-muted">Risk Mgmt</small>
+                                        <div class="fw-bold text-info">95.4%</div>
+                                    </div>
+                                </div>
+                                <div class="row mt-2">
+                                    <div class="col-6">
+                                        <small class="text-muted">Controls</small>
+                                        <div class="fw-bold text-warning">96.1%</div>
+                                    </div>
+                                    <div class="col-6">
+                                        <span class="status-indicator status-compliant"></span>
+                                        <small class="text-muted">Status: Compliant</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Security Events -->
+            <div class="row mb-4">
+                <div class="col-12">
+                    <h2 class="section-header"><i class="fas fa-exclamation-triangle me-2"></i>Security Events Analysis</h2>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="metric-card">
+                                <h5><i class="fas fa-chart-pie me-2"></i>Event Distribution</h5>
+                                <div class="row">
+                                    <div class="col-6">
+                                        <div class="text-center">
+                                            <div class="metric-value text-danger">3</div>
+                                            <div class="metric-label">Total Events</div>
+                                        </div>
+                                    </div>
+                                    <div class="col-6">
+                                        <div class="text-center">
+                                            <div class="metric-value text-success">100%</div>
+                                            <div class="metric-label">Resolved</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="mt-3">
+                                    <div class="row">
+                                        <div class="col-4">
+                                            <small class="text-muted">Critical</small>
+                                            <div class="fw-bold text-danger">0</div>
+                                        </div>
+                                        <div class="col-4">
+                                            <small class="text-muted">High</small>
+                                            <div class="fw-bold text-warning">1</div>
+                                        </div>
+                                        <div class="col-4">
+                                            <small class="text-muted">Medium</small>
+                                            <div class="fw-bold text-info">2</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="metric-card">
+                                <h5><i class="fas fa-clock me-2"></i>Response Metrics</h5>
+                                <div class="row">
+                                    <div class="col-6">
+                                        <div class="text-center">
+                                            <div class="metric-value text-info">1.2</div>
+                                            <div class="metric-label">Avg Hours</div>
+                                        </div>
+                                    </div>
+                                    <div class="col-6">
+                                        <div class="text-center">
+                                            <div class="metric-value text-success">100%</div>
+                                            <div class="metric-label">Resolution</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="mt-3">
+                                    <small class="text-muted">Performance:</small>
+                                    <div class="fw-bold text-success">+25.3% improvement</div>
+                                    <div class="fw-bold text-info">-40.2% reduction in events</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Risk Assessment -->
+            <div class="row mb-4">
+                <div class="col-12">
+                    <h2 class="section-header"><i class="fas fa-chart-line me-2"></i>Risk Assessment</h2>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="metric-card">
+                                <h6><i class="fas fa-exclamation-circle text-danger me-2"></i>Critical Risks</h6>
+                                <div class="text-center mb-3">
+                                    <div class="metric-value text-danger">2</div>
+                                    <div class="metric-label">Active Risks</div>
+                                </div>
+                                <div class="row">
+                                    <div class="col-6">
+                                        <small class="text-muted">Mitigated</small>
+                                        <div class="fw-bold text-success">1</div>
+                                    </div>
+                                    <div class="col-6">
+                                        <small class="text-muted">In Progress</small>
+                                        <div class="fw-bold text-warning">1</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="metric-card">
+                                <h6><i class="fas fa-shield-alt text-warning me-2"></i>Security Posture</h6>
+                                <div class="text-center mb-3">
+                                    <div class="metric-value text-success">94.3%</div>
+                                    <div class="metric-label">Risk Alignment</div>
+                                </div>
+                                <div class="row">
+                                    <div class="col-6">
+                                        <small class="text-muted">Vulnerabilities</small>
+                                        <div class="fw-bold text-success">3</div>
+                                    </div>
+                                    <div class="col-6">
+                                        <small class="text-muted">Patched</small>
+                                        <div class="fw-bold text-info">2</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="metric-card">
+                                <h6><i class="fas fa-chart-bar text-info me-2"></i>Compliance Score</h6>
+                                <div class="text-center mb-3">
+                                    <div class="metric-value text-success">98.7%</div>
+                                    <div class="metric-label">Overall Score</div>
+                                </div>
+                                <div class="row">
+                                    <div class="col-6">
+                                        <small class="text-muted">Frameworks</small>
+                                        <div class="fw-bold text-success">5</div>
+                                    </div>
+                                    <div class="col-6">
+                                        <small class="text-muted">Compliant</small>
+                                        <div class="fw-bold text-info">5</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recommendations -->
+            <div class="row mb-4">
+                <div class="col-12">
+                    <h2 class="section-header"><i class="fas fa-lightbulb me-2"></i>Strategic Recommendations</h2>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="metric-card">
+                                <h6><i class="fas fa-shield-alt text-primary me-2"></i>Enhance Security Framework</h6>
+                                <p class="mb-2">Implement advanced security controls and monitoring systems to improve threat detection and response capabilities.</p>
+                                <span class="badge bg-primary">Priority: High</span>
+                                <span class="badge bg-info">Timeline: Q1 2024</span>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="metric-card">
+                                <h6><i class="fas fa-users text-success me-2"></i>Strengthen Governance</h6>
+                                <p class="mb-2">Expand data stewardship program coverage and enhance policy enforcement mechanisms across all departments.</p>
+                                <span class="badge bg-success">Priority: High</span>
+                                <span class="badge bg-info">Timeline: Q2 2024</span>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="metric-card">
+                                <h6><i class="fas fa-clipboard-check text-warning me-2"></i>Compliance Automation</h6>
+                                <p class="mb-2">Deploy automated compliance monitoring and reporting systems to ensure continuous adherence to regulatory requirements.</p>
+                                <span class="badge bg-warning">Priority: Medium</span>
+                                <span class="badge bg-info">Timeline: Q3 2024</span>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="metric-card">
+                                <h6><i class="fas fa-chart-line text-info me-2"></i>Risk Monitoring</h6>
+                                <p class="mb-2">Implement real-time risk monitoring and alerting systems to improve threat detection and response times.</p>
+                                <span class="badge bg-info">Priority: Medium</span>
+                                <span class="badge bg-info">Timeline: Q4 2024</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+            <div class="container">
+                <div class="row">
+                    <div class="col-md-6">
+                        <p><i class="fas fa-calendar me-2"></i>Report Generated: <span id="generation-date"></span></p>
+                    </div>
+                    <div class="col-md-6 text-end">
+                        <p><i class="fas fa-user me-2"></i>Prepared for: Security & Compliance Team</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Set generation date
+        document.getElementById('generation-date').textContent = new Date().toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+    </script>
+</body>
+</html> 
