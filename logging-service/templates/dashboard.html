@@ -269,6 +269,12 @@
                         </a>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link" href="#ai-agent-hub" onclick="showSection('ai-agent-hub')">
+                            <i class="fas fa-robot me-2"></i>
+                            <span>AI Agent Hub</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link" href="#settings" onclick="showSection('settings')">
                             <i class="fas fa-cog me-2"></i>
                             <span>Settings</span>
@@ -1375,6 +1381,99 @@
             </div>
         </div>
 
+        <!-- AI Agent Hub Section -->
+        <div class="row mb-4" id="ai-agent-hub-section" style="display: none;">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <i class="fas fa-robot me-2"></i>
+                        AI Agent Hub
+                        <span class="badge bg-info ms-2">Intelligent Automation</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="card">
+                                    <div class="card-header">
+                                        <h5>Agent Status</h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <div id="agent-status">
+                                            <p>Loading agent status...</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="col-md-6">
+                                <div class="card">
+                                    <div class="card-header">
+                                        <h5>Workflow Execution</h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <form id="workflow-form">
+                                            <div class="mb-3">
+                                                <label for="workflow-select" class="form-label">Select Workflow</label>
+                                                <select class="form-select" id="workflow-select">
+                                                    <option value="validation_rule">Validation Rule Creation</option>
+                                                    <option value="missing_data">Missing Data Detection</option>
+                                                    <option value="ab_testing">A/B Testing</option>
+                                                    <option value="script_generation">Script Generation</option>
+                                                </select>
+                                            </div>
+                                            <button type="submit" class="btn btn-primary">Execute Workflow</button>
+                                        </form>
+                                        <div id="workflow-result" class="mt-3"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="row mt-4">
+                            <div class="col-md-4">
+                                <div class="card">
+                                    <div class="card-header">
+                                        <h5>Generated Scripts</h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <div id="scripts-list">
+                                            <p>Loading scripts...</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="col-md-4">
+                                <div class="card">
+                                    <div class="card-header">
+                                        <h5>Validation Rules</h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <div id="rules-list">
+                                            <p>Loading rules...</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="col-md-4">
+                                <div class="card">
+                                    <div class="card-header">
+                                        <h5>AI Tasks</h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <div id="tasks-list">
+                                            <p>Loading tasks...</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Comprehensive Reports Hub -->
         <div class="row mb-4" id="reports-section" style="display: none;">
             <div class="col-12">
@@ -2231,6 +2330,11 @@
                     document.getElementById('tasks-section').style.display = 'block';
                     document.getElementById('tasks-section').scrollIntoView({ behavior: 'smooth' });
                     loadTasksData();
+                    break;
+                case 'ai-agent-hub':
+                    document.getElementById('ai-agent-hub-section').style.display = 'block';
+                    document.getElementById('ai-agent-hub-section').scrollIntoView({ behavior: 'smooth' });
+                    loadAIAgentData();
                     break;
                 case 'reports':
                     document.getElementById('reports-section').style.display = 'block';
@@ -3705,6 +3809,281 @@
                 console.log('Tasks API not available, using mock data');
                 loadMockTasksData();
             }
+        }
+
+        // AI Agent Hub Functions
+        async function loadAIAgentData() {
+            try {
+                // Load agent status
+                await loadAgentStatus();
+                
+                // Load scripts
+                await loadScripts();
+                
+                // Load validation rules
+                await loadValidationRules();
+                
+                // Load AI tasks
+                await loadAITasks();
+                
+                // Setup workflow form
+                setupWorkflowForm();
+            } catch (error) {
+                console.error('Error loading AI agent data:', error);
+            }
+        }
+
+        async function loadAgentStatus() {
+            try {
+                const response = await fetch('/api/ai-agents/status');
+                if (response.ok) {
+                    const data = await response.json();
+                    updateAgentStatus(data.data);
+                } else {
+                    console.log('Agent status API not available');
+                    updateAgentStatus({});
+                }
+            } catch (error) {
+                console.log('Agent status API error:', error);
+                updateAgentStatus({});
+            }
+        }
+
+        function updateAgentStatus(status) {
+            const statusDiv = document.getElementById('agent-status');
+            if (!statusDiv) return;
+
+            if (Object.keys(status).length === 0) {
+                statusDiv.innerHTML = '<p class="text-muted">Agent status not available</p>';
+                return;
+            }
+
+            let html = '<div class="row">';
+            for (const [agentName, agentData] of Object.entries(status)) {
+                const isActive = agentData.is_active ? 'text-success' : 'text-danger';
+                const statusIcon = agentData.is_active ? 'fas fa-check-circle' : 'fas fa-times-circle';
+                
+                html += `
+                    <div class="col-md-6 mb-2">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span class="fw-bold">${agentName}</span>
+                            <span class="${isActive}">
+                                <i class="${statusIcon}"></i>
+                                ${agentData.is_active ? 'Active' : 'Inactive'}
+                            </span>
+                        </div>
+                        <small class="text-muted">
+                            Last execution: ${agentData.last_execution || 'Never'}
+                        </small>
+                    </div>
+                `;
+            }
+            html += '</div>';
+            statusDiv.innerHTML = html;
+        }
+
+        async function loadScripts() {
+            try {
+                const response = await fetch('/api/ai-agents/scripts');
+                if (response.ok) {
+                    const data = await response.json();
+                    updateScriptsList(data.data);
+                } else {
+                    console.log('Scripts API not available');
+                    updateScriptsList([]);
+                }
+            } catch (error) {
+                console.log('Scripts API error:', error);
+                updateScriptsList([]);
+            }
+        }
+
+        function updateScriptsList(scripts) {
+            const scriptsDiv = document.getElementById('scripts-list');
+            if (!scriptsDiv) return;
+
+            if (scripts.length === 0) {
+                scriptsDiv.innerHTML = '<p class="text-muted">No scripts available</p>';
+                return;
+            }
+
+            let html = '';
+            scripts.forEach(script => {
+                const statusClass = script.status === 'Approved' ? 'text-success' : 
+                                  script.status === 'Draft' ? 'text-warning' : 'text-muted';
+                html += `
+                    <div class="mb-2 p-2 border rounded">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <strong>${script.name}</strong>
+                                <br><small class="text-muted">${script.description}</small>
+                            </div>
+                            <span class="badge ${statusClass === 'text-success' ? 'bg-success' : 
+                                               statusClass === 'text-warning' ? 'bg-warning' : 'bg-secondary'}">
+                                ${script.status}
+                            </span>
+                        </div>
+                        <small class="text-muted">Created: ${new Date(script.created_at).toLocaleDateString()}</small>
+                    </div>
+                `;
+            });
+            scriptsDiv.innerHTML = html;
+        }
+
+        async function loadValidationRules() {
+            try {
+                const response = await fetch('/api/ai-agents/rules');
+                if (response.ok) {
+                    const data = await response.json();
+                    updateRulesList(data.data);
+                } else {
+                    console.log('Rules API not available');
+                    updateRulesList([]);
+                }
+            } catch (error) {
+                console.log('Rules API error:', error);
+                updateRulesList([]);
+            }
+        }
+
+        function updateRulesList(rules) {
+            const rulesDiv = document.getElementById('rules-list');
+            if (!rulesDiv) return;
+
+            if (rules.length === 0) {
+                rulesDiv.innerHTML = '<p class="text-muted">No rules available</p>';
+                return;
+            }
+
+            let html = '';
+            rules.forEach(rule => {
+                const severityClass = rule.severity === 'Critical' ? 'text-danger' :
+                                    rule.severity === 'High' ? 'text-warning' :
+                                    rule.severity === 'Medium' ? 'text-info' : 'text-muted';
+                html += `
+                    <div class="mb-2 p-2 border rounded">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <strong>${rule.name}</strong>
+                                <br><small class="text-muted">${rule.description}</small>
+                            </div>
+                            <span class="badge ${severityClass === 'text-danger' ? 'bg-danger' :
+                                               severityClass === 'text-warning' ? 'bg-warning' :
+                                               severityClass === 'text-info' ? 'bg-info' : 'bg-secondary'}">
+                                ${rule.severity}
+                            </span>
+                        </div>
+                        <small class="text-muted">Created: ${new Date(rule.created_at).toLocaleDateString()}</small>
+                    </div>
+                `;
+            });
+            rulesDiv.innerHTML = html;
+        }
+
+        async function loadAITasks() {
+            try {
+                const response = await fetch('/api/ai-agents/tasks');
+                if (response.ok) {
+                    const data = await response.json();
+                    updateTasksList(data.data);
+                } else {
+                    console.log('AI tasks API not available');
+                    updateTasksList([]);
+                }
+            } catch (error) {
+                console.log('AI tasks API error:', error);
+                updateTasksList([]);
+            }
+        }
+
+        function updateTasksList(tasks) {
+            const tasksDiv = document.getElementById('tasks-list');
+            if (!tasksDiv) return;
+
+            if (tasks.length === 0) {
+                tasksDiv.innerHTML = '<p class="text-muted">No tasks available</p>';
+                return;
+            }
+
+            let html = '';
+            tasks.forEach(task => {
+                const priorityClass = task.priority === 'High' ? 'text-danger' :
+                                    task.priority === 'Medium' ? 'text-warning' : 'text-muted';
+                const statusClass = task.status === 'Open' ? 'text-warning' :
+                                  task.status === 'InProgress' ? 'text-info' :
+                                  task.status === 'Completed' ? 'text-success' : 'text-muted';
+                html += `
+                    <div class="mb-2 p-2 border rounded">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <strong>${task.title}</strong>
+                                <br><small class="text-muted">${task.description}</small>
+                            </div>
+                            <div class="text-end">
+                                <span class="badge ${priorityClass === 'text-danger' ? 'bg-danger' :
+                                                   priorityClass === 'text-warning' ? 'bg-warning' : 'bg-secondary'}">
+                                    ${task.priority}
+                                </span>
+                                <br><span class="badge ${statusClass === 'text-warning' ? 'bg-warning' :
+                                                       statusClass === 'text-info' ? 'bg-info' :
+                                                       statusClass === 'text-success' ? 'bg-success' : 'bg-secondary'}">
+                                    ${task.status}
+                                </span>
+                            </div>
+                        </div>
+                        <small class="text-muted">Due: ${new Date(task.due_date).toLocaleDateString()}</small>
+                    </div>
+                `;
+            });
+            tasksDiv.innerHTML = html;
+        }
+
+        function setupWorkflowForm() {
+            const form = document.getElementById('workflow-form');
+            if (!form) return;
+
+            form.addEventListener('submit', async function(e) {
+                e.preventDefault();
+                
+                const workflowSelect = document.getElementById('workflow-select');
+                const workflowName = workflowSelect.value;
+                const resultDiv = document.getElementById('workflow-result');
+                
+                resultDiv.innerHTML = '<div class="alert alert-info">Executing workflow...</div>';
+                
+                try {
+                    const response = await fetch(`/api/ai-agents/workflow/${workflowName}`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({})
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        resultDiv.innerHTML = `
+                            <div class="alert alert-success">
+                                <strong>Success!</strong> ${result.message}
+                                <br><small>Data: ${JSON.stringify(result.data)}</small>
+                            </div>
+                        `;
+                    } else {
+                        resultDiv.innerHTML = `
+                            <div class="alert alert-danger">
+                                <strong>Error!</strong> ${result.message}
+                            </div>
+                        `;
+                    }
+                } catch (error) {
+                    resultDiv.innerHTML = `
+                        <div class="alert alert-danger">
+                            <strong>Error!</strong> Failed to execute workflow: ${error.message}
+                        </div>
+                    `;
+                }
+            });
         }
 
         function loadMockTasksData() {

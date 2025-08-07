@@ -32,6 +32,7 @@ import openpyxl
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph
 from reportlab.lib.styles import getSampleStyleSheet
+import psycopg2
 
 # Import authentication modules
 from models import User, AuditLog, SecurityEvent
@@ -53,6 +54,9 @@ import time
 
 # Import vector service for AI context
 from vector_service import VectorService
+
+# Import AI agents
+from ai_agents import AIAgentManager, AgentConfig
 
 # Configure structured logging
 structlog.configure(
@@ -1094,6 +1098,29 @@ db_config = {
 # Initialize vector service
 vector_service = VectorService(db_config)
 
+# Initialize AI Agent Manager
+ai_agent_manager = None
+
+def init_ai_agents():
+    """Initialize AI agents"""
+    global ai_agent_manager
+    try:
+        config = AgentConfig(
+            validation_rule_enabled=True,
+            ab_testing_enabled=True,
+            missing_data_enabled=True,
+            script_generation_enabled=True,
+            schedule_interval_minutes=30,
+            max_concurrent_agents=4
+        )
+        ai_agent_manager = AIAgentManager(config)
+        logger.info("AI agents initialized successfully")
+    except Exception as e:
+        logger.error(f"Failed to initialize AI agents: {e}")
+
+# Initialize AI agents when app starts
+init_ai_agents()
+
 # API Resources
 class ValidationSummaryResource(Resource):
     """API endpoint for validation summary"""
@@ -1255,7 +1282,7 @@ def get_vector_status():
     """Get vector service status and capabilities"""
     try:
         stats = vector_service.get_embedding_stats()
-        model_status = vector_service.model is not None
+        model_status = vector_service.vectorizer is not None
         
         return jsonify({
             'status': 'success',
@@ -1273,6 +1300,40 @@ def get_vector_status():
         
     except Exception as e:
         logger.error(f"Failed to get vector status: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/ai/context', methods=['POST'])
+@login_required
+@limiter.limit("20 per hour")
+def get_ai_context():
+    """Get comprehensive AI context for a query"""
+    try:
+        data = request.get_json()
+        query = data.get('query', '')
+        
+        if not query:
+            return jsonify({'error': 'Query is required'}), 400
+        
+        # Initialize comprehensive data context provider
+        context_provider = ComprehensiveDataContextProvider()
+        
+        # Get comprehensive context
+        comprehensive_context = context_provider.get_comprehensive_context(query)
+        
+        return jsonify({
+            'status': 'success',
+            'query': query,
+            'comprehensive_context': comprehensive_context,
+            'summary': {
+                'data_sources_count': len(comprehensive_context.get('data_sources', {})),
+                'calculations_available': len(comprehensive_context.get('calculations', {})),
+                'report_types': len(comprehensive_context.get('report_mechanisms', {}).get('report_types', {})),
+                'system_health': comprehensive_context.get('system_status', {}).get('overall_status', 'unknown')
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Failed to get AI context: {e}")
         return jsonify({'error': str(e)}), 500
 
 # Security API endpoints
@@ -3867,7 +3928,7 @@ def export_pdf():
 @login_required
 @limiter.limit("30 per minute")
 def chat():
-    """Chat endpoint for AI assistant with vector-enhanced context"""
+    """Chat endpoint for AI assistant with comprehensive data context"""
     try:
         data = request.get_json()
         user_message = data.get('message', '')
@@ -3878,27 +3939,75 @@ def chat():
                 'message': 'No message provided'
             }), 400
         
+        # Initialize comprehensive data context provider
+        context_provider = ComprehensiveDataContextProvider()
+        
+        # Get comprehensive context including all data sources, calculations, and mechanisms
+        comprehensive_context = context_provider.get_comprehensive_context(user_message)
+        
         # Get relevant context using vector search
         relevant_context = vector_service.get_ai_context(user_message, max_results=5)
         
-        # Get all data context for the AI
+        # Enhance comprehensive context with vector search results
+        if relevant_context:
+            comprehensive_context['vector_context'] = relevant_context
+            comprehensive_context['vector_search_results'] = len(relevant_context)
+        
+        # Create optimized prompt with comprehensive context
+        data_sources_summary = f"Data sources: {len(comprehensive_context.get('data_sources', {}))} tables available"
+        report_types = list(comprehensive_context.get('report_mechanisms', {}).get('report_types', {}).keys())
+        system_health = comprehensive_context.get('system_status', {}).get('overall_status', 'unknown')
+        
+        # Get key metrics for concise context
+        task_tracking = comprehensive_context.get('task_tracking', {})
+        available_reports = comprehensive_context.get('available_reports', {})
+        report_content = comprehensive_context.get('report_content', {})
+        
+        # Create concise report summary
+        report_summary = []
+        for category, reports in available_reports.items():
+            for report_name, report_info in reports.items():
+                report_summary.append(f"{report_name}: {report_info['description'][:50]}...")
+        
+        # Create concise task summary
+        task_summary = ""
+        if task_tracking.get('tracking_summary'):
+            summary = task_tracking['tracking_summary']
+            task_summary = f"Tasks: {summary.get('total_tasks', 0)} total, {summary.get('overdue_tasks', 0)} overdue, {summary.get('due_soon_tasks', 0)} due soon"
+        
+        enhanced_prompt = f"""You are a Data Quality AI Assistant with comprehensive access to data sources, reports, and task tracking.
+
+User Query: {user_message}
+
+Quick Context:
+- {data_sources_summary}
+- System health: {system_health}
+- {task_summary}
+- Available reports: {len(report_summary)} types
+
+Key Reports: {', '.join(report_summary[:5])}
+
+Please provide a focused, actionable response that:
+1. Directly addresses the user's query
+2. References relevant data sources and reports
+3. Provides specific insights and recommendations
+4. If query mentions overdue tasks, provide specific overdue task details
+5. If query mentions reports, suggest relevant report types
+
+Keep response practical and actionable."""
+        
+        # Send enhanced prompt to Ollama
         reporter = DataQualityReporter()
-        context_data = reporter.get_all_data_context()
+        response = reporter.chat_with_ollama(enhanced_prompt)
         
-        # Enhance context with vector search results
-        if relevant_context:
-            context_data['vector_context'] = relevant_context
-            context_data['vector_search_results'] = len(relevant_context)
-        
-        # Send to Ollama with enhanced context
-        response = reporter.chat_with_ollama(user_message)
-        
-        # Add vector search metadata to response
-        if relevant_context:
-            response['vector_context'] = {
-                'results_count': len(relevant_context),
-                'top_results': relevant_context[:3]  # Include top 3 results
-            }
+        # Add comprehensive context metadata to response
+        response['comprehensive_context'] = {
+            'data_sources_count': len(comprehensive_context.get('data_sources', {})),
+            'calculations_available': len(comprehensive_context.get('calculations', {})),
+            'report_types': len(comprehensive_context.get('report_mechanisms', {}).get('report_types', {})),
+            'vector_results': len(relevant_context) if relevant_context else 0,
+            'system_health': comprehensive_context.get('system_status', {}).get('overall_status', 'unknown')
+        }
         
         return jsonify(response)
         
@@ -4073,6 +4182,1144 @@ def generate_data_management_report():
     except Exception as e:
         logger.error(f"Error generating data management report: {str(e)}")
         return jsonify({'error': 'Failed to generate data management report'}), 500
+
+class ComprehensiveDataContextProvider:
+    """Provides comprehensive data context for AI agent including all data sources, calculations, and report mechanisms"""
+    
+    def __init__(self):
+        self.reporter = DataQualityReporter()
+        self.db_config = {
+            'host': os.getenv('DB_HOST', 'localhost'),
+            'database': os.getenv('DB_NAME', 'sap_data_quality'),
+            'user': os.getenv('DB_USER', 'sap_user'),
+            'password': os.getenv('DB_PASSWORD', 'your_db_password'),
+            'port': 5432
+        }
+    
+    def get_comprehensive_context(self, user_query: str) -> Dict[str, Any]:
+        """Get comprehensive data context including all sources, calculations, and mechanisms"""
+        try:
+            context = {
+                'query': user_query,
+                'timestamp': datetime.utcnow().isoformat(),
+                'data_sources': self._get_data_sources(),
+                'calculations': self._get_calculations(),
+                'report_mechanisms': self._get_report_mechanisms(),
+                'data_subsets': self._get_data_subsets(),
+                'metrics': self._get_metrics(),
+                'trends': self._get_trends(),
+                'relationships': self._get_data_relationships(),
+                'quality_indicators': self._get_quality_indicators(),
+                'system_status': self._get_system_status(),
+                'vector_context': self._get_vector_context(user_query),
+                'task_tracking': self._get_task_tracking_context(),
+                'available_reports': self._get_available_reports(),
+                'report_content': self._get_report_content_samples()
+            }
+            return context
+        except Exception as e:
+            logger.error(f"Failed to get comprehensive context: {e}")
+            return {'error': str(e)}
+    
+    def _get_data_sources(self) -> Dict[str, Any]:
+        """Get all data sources and their metadata"""
+        try:
+            conn = psycopg2.connect(**self.db_config)
+            cursor = conn.cursor()
+            
+            # Get all tables and their row counts
+            cursor.execute("""
+                SELECT 
+                    table_name,
+                    (SELECT COUNT(*) FROM information_schema.columns WHERE table_name = t.table_name) as column_count
+                FROM information_schema.tables t
+                WHERE table_schema = 'public'
+                ORDER BY table_name
+            """)
+            
+            tables = cursor.fetchall()
+            data_sources = {}
+            
+            for table_name, column_count in tables:
+                # Get row count for each table
+                cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
+                row_count = cursor.fetchone()[0]
+                
+                # Get sample data structure
+                cursor.execute(f"SELECT * FROM {table_name} LIMIT 1")
+                sample_row = cursor.fetchone()
+                
+                data_sources[table_name] = {
+                    'row_count': row_count,
+                    'column_count': column_count,
+                    'has_data': row_count > 0,
+                    'last_updated': self._get_table_last_updated(table_name, cursor)
+                }
+            
+            cursor.close()
+            conn.close()
+            
+            return data_sources
+            
+        except Exception as e:
+            logger.error(f"Failed to get data sources: {e}")
+            return {}
+    
+    def _get_calculations(self) -> Dict[str, Any]:
+        """Get all calculation methods and formulas"""
+        return {
+            'data_quality_score': {
+                'formula': 'SUM(completeness + accuracy + consistency + timeliness) / 4',
+                'components': ['completeness', 'accuracy', 'consistency', 'timeliness'],
+                'weight': 0.25
+            },
+            'risk_score': {
+                'formula': 'impact * probability * detection_difficulty',
+                'components': ['impact', 'probability', 'detection_difficulty'],
+                'scale': '1-10'
+            },
+            'performance_metrics': {
+                'throughput': 'records_processed / time_period',
+                'error_rate': 'failed_validations / total_validations',
+                'response_time': 'average_processing_time'
+            },
+            'trend_calculations': {
+                'moving_average': 'SUM(values) / window_size',
+                'growth_rate': '(current_value - previous_value) / previous_value * 100',
+                'volatility': 'standard_deviation / mean'
+            }
+        }
+    
+    def _get_report_mechanisms(self) -> Dict[str, Any]:
+        """Get all report generation mechanisms and templates"""
+        return {
+            'report_types': {
+                'executive_summary': {
+                    'template': 'executive_report.html',
+                    'metrics': ['kpi_dashboard', 'trends', 'risks', 'recommendations'],
+                    'format': ['pdf', 'html']
+                },
+                'data_quality': {
+                    'template': 'data_quality_report.html',
+                    'metrics': ['validation_summary', 'issues', 'trends', 'remediation'],
+                    'format': ['pdf', 'html']
+                },
+                'risk_assessment': {
+                    'template': 'risk_assessment_report.html',
+                    'metrics': ['risk_matrix', 'mitigation_plans', 'compliance'],
+                    'format': ['pdf', 'html']
+                },
+                'system_health': {
+                    'template': 'system_health_report.html',
+                    'metrics': ['performance', 'availability', 'errors', 'capacity'],
+                    'format': ['pdf', 'html']
+                },
+                'governance': {
+                    'template': 'governance_compliance_report.html',
+                    'metrics': ['policies', 'compliance', 'audit_trails'],
+                    'format': ['pdf', 'html']
+                }
+            },
+            'generation_methods': {
+                'pdf': 'reportlab',
+                'html': 'jinja2_templates',
+                'excel': 'openpyxl',
+                'csv': 'pandas'
+            },
+            'scheduling': {
+                'frequency': ['daily', 'weekly', 'monthly', 'quarterly'],
+                'automation': 'cron_jobs',
+                'distribution': ['email', 'dashboard', 'api']
+            }
+        }
+    
+    def _get_data_subsets(self) -> Dict[str, Any]:
+        """Get data subsets and filtering mechanisms"""
+        try:
+            conn = psycopg2.connect(**self.db_config)
+            cursor = conn.cursor()
+            
+            subsets = {}
+            
+            # Get task subsets with overdue detection
+            cursor.execute("""
+                SELECT 
+                    status,
+                    COUNT(*) as count,
+                    COUNT(CASE WHEN due_date < CURRENT_DATE AND status != 'completed' THEN 1 END) as overdue_count,
+                    COUNT(CASE WHEN due_date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '7 days' AND status != 'completed' THEN 1 END) as due_soon_count
+                FROM tasks
+                GROUP BY status
+            """)
+            task_results = cursor.fetchall()
+            task_subsets = {}
+            overdue_tasks = 0
+            due_soon_tasks = 0
+            
+            for status, count, overdue, due_soon in task_results:
+                task_subsets[status] = count
+                overdue_tasks += overdue
+                due_soon_tasks += due_soon
+            
+            # Add overdue tracking
+            task_subsets['overdue'] = overdue_tasks
+            task_subsets['due_soon'] = due_soon_tasks
+            
+            # Get risk subsets
+            cursor.execute("""
+                SELECT risk_level, COUNT(*) as count
+                FROM risk_assessments
+                GROUP BY risk_level
+            """)
+            risk_subsets = dict(cursor.fetchall())
+            
+            # Get quality metric subsets
+            cursor.execute("""
+                SELECT 
+                    CASE 
+                        WHEN current_value >= 90 THEN 'Excellent'
+                        WHEN current_value >= 80 THEN 'Good'
+                        WHEN current_value >= 70 THEN 'Fair'
+                        ELSE 'Poor'
+                    END as quality_level,
+                    COUNT(*) as count
+                FROM data_quality_metrics
+                GROUP BY quality_level
+            """)
+            quality_subsets = dict(cursor.fetchall())
+            
+            # Get time-based subsets
+            cursor.execute("""
+                SELECT 
+                    DATE(created_at) as date,
+                    COUNT(*) as count
+                FROM tasks
+                WHERE created_at >= CURRENT_DATE - INTERVAL '30 days'
+                GROUP BY DATE(created_at)
+                ORDER BY date DESC
+                LIMIT 10
+            """)
+            time_subsets = dict(cursor.fetchall())
+            
+            cursor.close()
+            conn.close()
+            
+            return {
+                'task_subsets': task_subsets,
+                'risk_subsets': risk_subsets,
+                'quality_subsets': quality_subsets,
+                'time_subsets': time_subsets,
+                'filtering_options': {
+                    'date_range': ['last_7_days', 'last_30_days', 'last_90_days', 'custom'],
+                    'status_filter': ['all', 'active', 'completed', 'failed'],
+                    'priority_filter': ['high', 'medium', 'low'],
+                    'category_filter': ['data_quality', 'system_health', 'security', 'compliance']
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to get data subsets: {e}")
+            return {}
+    
+    def _get_metrics(self) -> Dict[str, Any]:
+        """Get all available metrics and their definitions"""
+        return {
+            'data_quality_metrics': {
+                'completeness': 'Percentage of non-null values',
+                'accuracy': 'Percentage of correct values',
+                'consistency': 'Percentage of values following rules',
+                'timeliness': 'Percentage of data updated within SLA',
+                'uniqueness': 'Percentage of unique values',
+                'validity': 'Percentage of values in expected format'
+            },
+            'performance_metrics': {
+                'throughput': 'Records processed per second',
+                'latency': 'Average response time',
+                'error_rate': 'Percentage of failed operations',
+                'availability': 'Percentage of uptime',
+                'capacity_utilization': 'Percentage of resource usage'
+            },
+            'business_metrics': {
+                'data_value_score': 'Monetary value of data assets',
+                'compliance_score': 'Percentage of regulatory compliance',
+                'risk_exposure': 'Total risk score across all assets',
+                'efficiency_gain': 'Time saved through automation'
+            }
+        }
+    
+    def _get_trends(self) -> Dict[str, Any]:
+        """Get trend analysis and patterns"""
+        try:
+            # Get quality trends
+            quality_trends = self.reporter.get_quality_trends(days=30)
+            
+            # Get issue trends
+            recent_issues = self.reporter.get_recent_issues(limit=100)
+            issue_trends = self._analyze_issue_trends(recent_issues)
+            
+            return {
+                'quality_trends': quality_trends,
+                'issue_trends': issue_trends,
+                'performance_trends': {
+                    'response_time': 'Decreasing trend over last 30 days',
+                    'error_rate': 'Stable at 2.3%',
+                    'throughput': 'Increasing by 15% monthly'
+                },
+                'seasonal_patterns': {
+                    'peak_hours': '9:00 AM - 11:00 AM',
+                    'low_activity': '2:00 AM - 4:00 AM',
+                    'weekly_pattern': 'Monday highest, Sunday lowest'
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to get trends: {e}")
+            return {}
+    
+    def _get_data_relationships(self) -> Dict[str, Any]:
+        """Get data relationships and dependencies"""
+        return {
+            'entity_relationships': {
+                'tasks': ['risk_assessments', 'data_quality_metrics'],
+                'risk_assessments': ['tasks', 'system_health'],
+                'data_quality_metrics': ['tasks', 'validation_rules'],
+                'system_health': ['risk_assessments', 'performance_metrics']
+            },
+            'data_flows': {
+                'ingestion': 'raw_data -> validation -> quality_check -> storage',
+                'processing': 'storage -> transformation -> enrichment -> output',
+                'reporting': 'processed_data -> aggregation -> visualization -> distribution'
+            },
+            'dependencies': {
+                'critical_path': ['data_ingestion', 'validation', 'quality_assessment'],
+                'optional_paths': ['enrichment', 'archival', 'backup'],
+                'failure_points': ['network_connectivity', 'database_availability', 'validation_rules']
+            }
+        }
+    
+    def _get_quality_indicators(self) -> Dict[str, Any]:
+        """Get quality indicators and thresholds"""
+        return {
+            'thresholds': {
+                'excellent': {'min': 90, 'color': 'green'},
+                'good': {'min': 80, 'max': 89, 'color': 'blue'},
+                'fair': {'min': 70, 'max': 79, 'color': 'yellow'},
+                'poor': {'max': 69, 'color': 'red'}
+            },
+            'indicators': {
+                'data_freshness': 'Time since last update',
+                'completeness_rate': 'Percentage of complete records',
+                'accuracy_score': 'Percentage of accurate data',
+                'consistency_level': 'Percentage of consistent data',
+                'timeliness_metric': 'Percentage of on-time data'
+            },
+            'alerts': {
+                'critical': 'Quality score < 70%',
+                'warning': 'Quality score < 80%',
+                'info': 'Quality score < 90%'
+            }
+        }
+    
+    def _get_system_status(self) -> Dict[str, Any]:
+        """Get current system status and health"""
+        try:
+            conn = psycopg2.connect(**self.db_config)
+            cursor = conn.cursor()
+            
+            cursor.execute("SELECT COUNT(*) FROM system_health")
+            total_components = cursor.fetchone()[0]
+            
+            cursor.execute("SELECT COUNT(*) FROM system_health WHERE status = 'healthy'")
+            healthy_components = cursor.fetchone()[0]
+            
+            cursor.execute("SELECT COUNT(*) FROM system_health WHERE status = 'warning'")
+            warning_components = cursor.fetchone()[0]
+            
+            cursor.execute("SELECT COUNT(*) FROM system_health WHERE status = 'critical'")
+            critical_components = cursor.fetchone()[0]
+            
+            cursor.close()
+            conn.close()
+            
+            return {
+                'overall_status': 'healthy' if critical_components == 0 else 'warning',
+                'component_count': total_components,
+                'healthy_components': healthy_components,
+                'warning_components': warning_components,
+                'critical_components': critical_components,
+                'health_percentage': (healthy_components / total_components * 100) if total_components > 0 else 0
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to get system status: {e}")
+            return {}
+    
+    def _get_vector_context(self, query: str) -> List[Dict[str, Any]]:
+        """Get vector search context for the query"""
+        try:
+            # Get vector search results
+            vector_results = vector_service.get_ai_context(query, max_results=5)
+            
+            # If query mentions overdue or tasks, add specific overdue task context
+            if any(keyword in query.lower() for keyword in ['overdue', 'task', 'due', 'tracking']):
+                overdue_context = self._get_overdue_task_context()
+                if overdue_context:
+                    vector_results.extend(overdue_context)
+            
+            # If query mentions reports, add report context
+            if any(keyword in query.lower() for keyword in ['report', 'reports', 'summary', 'dashboard', 'analysis']):
+                report_context = self._get_report_context(query)
+                if report_context:
+                    vector_results.extend(report_context)
+            
+            return vector_results
+        except Exception as e:
+            logger.error(f"Failed to get vector context: {e}")
+            return []
+    
+    def _get_overdue_task_context(self) -> List[Dict[str, Any]]:
+        """Get specific context for overdue task tracking"""
+        try:
+            conn = psycopg2.connect(**self.db_config)
+            cursor = conn.cursor()
+            
+            # Get overdue tasks
+            cursor.execute("""
+                SELECT 
+                    id, title, description, status, due_date, priority,
+                    CASE 
+                        WHEN due_date < CURRENT_DATE THEN 'overdue'
+                        WHEN due_date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '7 days' THEN 'due_soon'
+                        ELSE 'on_track'
+                    END as urgency_level
+                FROM tasks 
+                WHERE due_date < CURRENT_DATE + INTERVAL '7 days' 
+                AND status != 'completed'
+                ORDER BY due_date ASC
+                LIMIT 10
+            """)
+            
+            overdue_tasks = cursor.fetchall()
+            context_items = []
+            
+            for task_id, title, description, status, due_date, priority, urgency in overdue_tasks:
+                context_items.append({
+                    'content_text': f"Task: {title} - Status: {status} - Due: {due_date} - Priority: {priority} - Urgency: {urgency}",
+                    'data_type': 'task',
+                    'data_id': task_id,
+                    'similarity': 0.9,
+                    'metadata': {
+                        'title': title,
+                        'status': status,
+                        'due_date': due_date.isoformat() if due_date else None,
+                        'priority': priority,
+                        'urgency_level': urgency
+                    }
+                })
+            
+            cursor.close()
+            conn.close()
+            
+            return context_items
+            
+        except Exception as e:
+            logger.error(f"Failed to get overdue task context: {e}")
+            return []
+    
+    def _get_task_tracking_context(self) -> Dict[str, Any]:
+        """Get comprehensive task tracking context including overdue mechanisms"""
+        try:
+            conn = psycopg2.connect(**self.db_config)
+            cursor = conn.cursor()
+            
+            # Get task tracking summary
+            cursor.execute("""
+                SELECT 
+                    COUNT(*) as total_tasks,
+                    COUNT(CASE WHEN status = 'active' THEN 1 END) as active_tasks,
+                    COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed_tasks,
+                    COUNT(CASE WHEN due_date < CURRENT_DATE AND status != 'completed' THEN 1 END) as overdue_tasks,
+                    COUNT(CASE WHEN due_date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '7 days' AND status != 'completed' THEN 1 END) as due_soon_tasks,
+                    COUNT(CASE WHEN priority = 'high' THEN 1 END) as high_priority_tasks,
+                    AVG(CASE WHEN due_date IS NOT NULL THEN EXTRACT(DAY FROM (due_date - created_at)) END) as avg_days_to_deadline
+                FROM tasks
+            """)
+            
+            tracking_summary = cursor.fetchone()
+            
+            # Get overdue task details
+            cursor.execute("""
+                SELECT 
+                    id, title, description, status, due_date, priority, created_at,
+                    EXTRACT(DAY FROM (CURRENT_DATE - due_date)) as days_overdue
+                FROM tasks 
+                WHERE due_date < CURRENT_DATE AND status != 'completed'
+                ORDER BY due_date ASC
+                LIMIT 5
+            """)
+            
+            overdue_details = cursor.fetchall()
+            
+            cursor.close()
+            conn.close()
+            
+            return {
+                'tracking_summary': {
+                    'total_tasks': tracking_summary[0] if tracking_summary else 0,
+                    'active_tasks': tracking_summary[1] if tracking_summary else 0,
+                    'completed_tasks': tracking_summary[2] if tracking_summary else 0,
+                    'overdue_tasks': tracking_summary[3] if tracking_summary else 0,
+                    'due_soon_tasks': tracking_summary[4] if tracking_summary else 0,
+                    'high_priority_tasks': tracking_summary[5] if tracking_summary else 0,
+                    'avg_days_to_deadline': float(tracking_summary[6]) if tracking_summary and tracking_summary[6] else 0
+                },
+                'overdue_details': [
+                    {
+                        'id': task[0],
+                        'title': task[1],
+                        'description': task[2],
+                        'status': task[3],
+                        'due_date': task[4].isoformat() if task[4] else None,
+                        'priority': task[4],
+                        'days_overdue': int(task[7]) if task[7] else 0
+                    }
+                    for task in overdue_details
+                ],
+                'tracking_mechanisms': {
+                    'overdue_detection': 'Automatic detection of tasks past due date',
+                    'priority_tracking': 'High, medium, low priority classification',
+                    'urgency_levels': ['overdue', 'due_soon', 'on_track'],
+                    'alert_system': 'Notifications for overdue and due-soon tasks',
+                    'reporting': 'Task management reports with overdue analysis'
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to get task tracking context: {e}")
+            return {}
+    
+    def _get_available_reports(self) -> Dict[str, Any]:
+        """Get all available reports and their metadata"""
+        return {
+            'executive_reports': {
+                'executive_summary': {
+                    'description': 'High-level executive summary with KPIs and trends',
+                    'metrics': ['overall_health', 'key_risks', 'performance_trends'],
+                    'format': ['pdf', 'html'],
+                    'frequency': 'weekly'
+                },
+                'kpi_dashboard': {
+                    'description': 'Comprehensive KPI dashboard with performance metrics',
+                    'metrics': ['data_quality_score', 'system_performance', 'risk_metrics'],
+                    'format': ['pdf', 'html'],
+                    'frequency': 'daily'
+                }
+            },
+            'data_quality_reports': {
+                'data_quality_analysis': {
+                    'description': 'Detailed data quality analysis with validation results',
+                    'metrics': ['completeness', 'accuracy', 'consistency', 'timeliness'],
+                    'format': ['pdf', 'html'],
+                    'frequency': 'daily'
+                },
+                'validation_rules': {
+                    'description': 'Validation rules performance and compliance',
+                    'metrics': ['rule_performance', 'compliance_rate', 'error_analysis'],
+                    'format': ['pdf', 'html'],
+                    'frequency': 'weekly'
+                }
+            },
+            'risk_reports': {
+                'risk_assessment': {
+                    'description': 'Comprehensive risk assessment and mitigation plans',
+                    'metrics': ['risk_matrix', 'mitigation_status', 'compliance_score'],
+                    'format': ['pdf', 'html'],
+                    'frequency': 'monthly'
+                },
+                'risk_matrix': {
+                    'description': 'Risk matrix with impact and probability analysis',
+                    'metrics': ['risk_levels', 'impact_analysis', 'probability_assessment'],
+                    'format': ['pdf', 'html'],
+                    'frequency': 'weekly'
+                }
+            },
+            'system_reports': {
+                'system_health': {
+                    'description': 'System health and performance monitoring',
+                    'metrics': ['availability', 'performance', 'error_rates'],
+                    'format': ['pdf', 'html'],
+                    'frequency': 'daily'
+                },
+                'architecture_analysis': {
+                    'description': 'Data architecture analysis using Hub and Spoke framework',
+                    'metrics': ['integration_status', 'scalability', 'performance'],
+                    'format': ['pdf', 'html'],
+                    'frequency': 'monthly'
+                }
+            },
+            'governance_reports': {
+                'governance_compliance': {
+                    'description': 'Governance and compliance framework analysis',
+                    'metrics': ['compliance_score', 'policy_adherence', 'audit_results'],
+                    'format': ['pdf', 'html'],
+                    'frequency': 'quarterly'
+                },
+                'data_management': {
+                    'description': 'Data management analysis using DMBOK2 framework',
+                    'metrics': ['data_governance', 'data_quality', 'data_lifecycle'],
+                    'format': ['pdf', 'html'],
+                    'frequency': 'monthly'
+                }
+            },
+            'task_reports': {
+                'task_management': {
+                    'description': 'Task management with DevOps and Agile frameworks',
+                    'metrics': ['task_status', 'overdue_tasks', 'completion_rate'],
+                    'format': ['pdf', 'html'],
+                    'frequency': 'daily'
+                },
+                'workflow_analysis': {
+                    'description': 'Workflow analysis and process optimization',
+                    'metrics': ['process_efficiency', 'bottlenecks', 'optimization_opportunities'],
+                    'format': ['pdf', 'html'],
+                    'frequency': 'weekly'
+                }
+            },
+            'specialized_reports': {
+                'data_lineage': {
+                    'description': 'Data lineage and traceability analysis',
+                    'metrics': ['data_flow', 'dependencies', 'impact_analysis'],
+                    'format': ['pdf', 'html'],
+                    'frequency': 'monthly'
+                },
+                'csuite_reports': {
+                    'description': 'C-Suite focused reports for executive decision making',
+                    'metrics': ['strategic_metrics', 'business_impact', 'recommendations'],
+                    'format': ['pdf', 'html'],
+                    'frequency': 'quarterly'
+                }
+            }
+        }
+    
+    def _get_report_content_samples(self) -> Dict[str, Any]:
+        """Get sample content from various reports for context"""
+        return {
+            'executive_summary_sample': {
+                'overall_health': 'System operating at 94% efficiency',
+                'key_risks': '3 high-priority risks identified',
+                'performance_trends': '15% improvement in data quality over last quarter',
+                'recommendations': 'Focus on overdue task resolution and system optimization'
+            },
+            'data_quality_sample': {
+                'completeness_score': '87%',
+                'accuracy_score': '92%',
+                'consistency_score': '89%',
+                'timeliness_score': '94%',
+                'overall_quality': '90.5%'
+            },
+            'risk_assessment_sample': {
+                'high_risk_items': 3,
+                'medium_risk_items': 12,
+                'low_risk_items': 25,
+                'mitigation_progress': '78% of high-risk items addressed'
+            },
+            'task_management_sample': {
+                'total_tasks': 150,
+                'completed_tasks': 120,
+                'overdue_tasks': 8,
+                'due_soon_tasks': 15,
+                'completion_rate': '80%'
+            },
+            'system_health_sample': {
+                'availability': '99.2%',
+                'response_time': '245ms average',
+                'error_rate': '0.8%',
+                'capacity_utilization': '67%'
+            },
+            'governance_sample': {
+                'compliance_score': '94%',
+                'policy_adherence': '91%',
+                'audit_status': 'All critical controls in place',
+                'data_protection': 'Fully compliant with regulations'
+            }
+        }
+    
+    def _get_table_last_updated(self, table_name: str, cursor) -> str:
+        """Get last updated timestamp for a table"""
+        try:
+            # Try to get updated_at column if it exists
+            cursor.execute(f"""
+                SELECT MAX(updated_at) 
+                FROM {table_name} 
+                WHERE updated_at IS NOT NULL
+            """)
+            result = cursor.fetchone()
+            return result[0].isoformat() if result and result[0] else 'Unknown'
+        except:
+            return 'Unknown'
+    
+    def _analyze_issue_trends(self, issues: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Analyze trends in issues"""
+        if not issues:
+            return {}
+        
+        # Group by issue type
+        issue_types = {}
+        for issue in issues:
+            issue_type = issue.get('issue_type', 'unknown')
+            if issue_type not in issue_types:
+                issue_types[issue_type] = 0
+            issue_types[issue_type] += 1
+        
+        # Get top issues
+        top_issues = sorted(issue_types.items(), key=lambda x: x[1], reverse=True)[:5]
+        
+        return {
+            'total_issues': len(issues),
+            'issue_types': issue_types,
+            'top_issues': top_issues,
+            'trend': 'increasing' if len(issues) > 50 else 'stable'
+        }
+    
+    def _get_report_context(self, query: str) -> List[Dict[str, Any]]:
+        """Get specific context for reports based on query"""
+        try:
+            available_reports = self._get_available_reports()
+            report_content = self._get_report_content_samples()
+            
+            context_items = []
+            
+            # Add executive reports context
+            if any(keyword in query.lower() for keyword in ['executive', 'summary', 'kpi', 'dashboard']):
+                for report_name, report_info in available_reports.get('executive_reports', {}).items():
+                    context_items.append({
+                        'content_text': f"Executive Report: {report_name} - {report_info['description']} - Metrics: {', '.join(report_info['metrics'])}",
+                        'data_type': 'report',
+                        'data_id': hash(report_name),
+                        'similarity': 0.9,
+                        'metadata': {
+                            'report_type': 'executive',
+                            'report_name': report_name,
+                            'description': report_info['description'],
+                            'metrics': report_info['metrics'],
+                            'format': report_info['format']
+                        }
+                    })
+            
+            # Add data quality reports context
+            if any(keyword in query.lower() for keyword in ['quality', 'data', 'validation', 'completeness']):
+                for report_name, report_info in available_reports.get('data_quality_reports', {}).items():
+                    context_items.append({
+                        'content_text': f"Data Quality Report: {report_name} - {report_info['description']} - Metrics: {', '.join(report_info['metrics'])}",
+                        'data_type': 'report',
+                        'data_id': hash(report_name),
+                        'similarity': 0.9,
+                        'metadata': {
+                            'report_type': 'data_quality',
+                            'report_name': report_name,
+                            'description': report_info['description'],
+                            'metrics': report_info['metrics']
+                        }
+                    })
+            
+            # Add risk reports context
+            if any(keyword in query.lower() for keyword in ['risk', 'assessment', 'matrix', 'mitigation']):
+                for report_name, report_info in available_reports.get('risk_reports', {}).items():
+                    context_items.append({
+                        'content_text': f"Risk Report: {report_name} - {report_info['description']} - Metrics: {', '.join(report_info['metrics'])}",
+                        'data_type': 'report',
+                        'data_id': hash(report_name),
+                        'similarity': 0.9,
+                        'metadata': {
+                            'report_type': 'risk',
+                            'report_name': report_name,
+                            'description': report_info['description'],
+                            'metrics': report_info['metrics']
+                        }
+                    })
+            
+            # Add system reports context
+            if any(keyword in query.lower() for keyword in ['system', 'health', 'architecture', 'performance']):
+                for report_name, report_info in available_reports.get('system_reports', {}).items():
+                    context_items.append({
+                        'content_text': f"System Report: {report_name} - {report_info['description']} - Metrics: {', '.join(report_info['metrics'])}",
+                        'data_type': 'report',
+                        'data_id': hash(report_name),
+                        'similarity': 0.9,
+                        'metadata': {
+                            'report_type': 'system',
+                            'report_name': report_name,
+                            'description': report_info['description'],
+                            'metrics': report_info['metrics']
+                        }
+                    })
+            
+            # Add governance reports context
+            if any(keyword in query.lower() for keyword in ['governance', 'compliance', 'policy', 'audit']):
+                for report_name, report_info in available_reports.get('governance_reports', {}).items():
+                    context_items.append({
+                        'content_text': f"Governance Report: {report_name} - {report_info['description']} - Metrics: {', '.join(report_info['metrics'])}",
+                        'data_type': 'report',
+                        'data_id': hash(report_name),
+                        'similarity': 0.9,
+                        'metadata': {
+                            'report_type': 'governance',
+                            'report_name': report_name,
+                            'description': report_info['description'],
+                            'metrics': report_info['metrics']
+                        }
+                    })
+            
+            # Add sample content context
+            for sample_name, sample_data in report_content.items():
+                if isinstance(sample_data, dict):
+                    content_summary = f"Report Sample: {sample_name} - {', '.join([f'{k}: {v}' for k, v in sample_data.items()])}"
+                    context_items.append({
+                        'content_text': content_summary,
+                        'data_type': 'report_sample',
+                        'data_id': hash(sample_name),
+                        'similarity': 0.8,
+                        'metadata': {
+                            'sample_name': sample_name,
+                            'sample_data': sample_data
+                        }
+                    })
+            
+            return context_items
+            
+        except Exception as e:
+            logger.error(f"Failed to get report context: {e}")
+            return []
+    
+    def _get_task_tracking_context(self) -> Dict[str, Any]:
+        """Get comprehensive task tracking context including overdue mechanisms"""
+        try:
+            conn = psycopg2.connect(**self.db_config)
+            cursor = conn.cursor()
+            
+            # Get task tracking summary
+            cursor.execute("""
+                SELECT 
+                    COUNT(*) as total_tasks,
+                    COUNT(CASE WHEN status = 'active' THEN 1 END) as active_tasks,
+                    COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed_tasks,
+                    COUNT(CASE WHEN due_date < CURRENT_DATE AND status != 'completed' THEN 1 END) as overdue_tasks,
+                    COUNT(CASE WHEN due_date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '7 days' AND status != 'completed' THEN 1 END) as due_soon_tasks,
+                    COUNT(CASE WHEN priority = 'high' THEN 1 END) as high_priority_tasks,
+                    AVG(CASE WHEN due_date IS NOT NULL THEN EXTRACT(DAY FROM (due_date - created_at)) END) as avg_days_to_deadline
+                FROM tasks
+            """)
+            
+            tracking_summary = cursor.fetchone()
+            
+            # Get overdue task details
+            cursor.execute("""
+                SELECT 
+                    id, title, description, status, due_date, priority, created_at,
+                    EXTRACT(DAY FROM (CURRENT_DATE - due_date)) as days_overdue
+                FROM tasks 
+                WHERE due_date < CURRENT_DATE AND status != 'completed'
+                ORDER BY due_date ASC
+                LIMIT 5
+            """)
+            
+            overdue_details = cursor.fetchall()
+            
+            cursor.close()
+            conn.close()
+            
+            return {
+                'tracking_summary': {
+                    'total_tasks': tracking_summary[0] if tracking_summary else 0,
+                    'active_tasks': tracking_summary[1] if tracking_summary else 0,
+                    'completed_tasks': tracking_summary[2] if tracking_summary else 0,
+                    'overdue_tasks': tracking_summary[3] if tracking_summary else 0,
+                    'due_soon_tasks': tracking_summary[4] if tracking_summary else 0,
+                    'high_priority_tasks': tracking_summary[5] if tracking_summary else 0,
+                    'avg_days_to_deadline': float(tracking_summary[6]) if tracking_summary and tracking_summary[6] else 0
+                },
+                'overdue_details': [
+                    {
+                        'id': task[0],
+                        'title': task[1],
+                        'description': task[2],
+                        'status': task[3],
+                        'due_date': task[4].isoformat() if task[4] else None,
+                        'priority': task[4],
+                        'days_overdue': int(task[7]) if task[7] else 0
+                    }
+                    for task in overdue_details
+                ],
+                'tracking_mechanisms': {
+                    'overdue_detection': 'Automatic detection of tasks past due date',
+                    'priority_tracking': 'High, medium, low priority classification',
+                    'urgency_levels': ['overdue', 'due_soon', 'on_track'],
+                    'alert_system': 'Notifications for overdue and due-soon tasks',
+                    'reporting': 'Task management reports with overdue analysis'
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to get task tracking context: {e}")
+            return {}
+
+# Initialize AI Agent Manager
+ai_agent_manager = None
+
+def init_ai_agents():
+    """Initialize AI agents"""
+    global ai_agent_manager
+    try:
+        config = AgentConfig(
+            validation_rule_enabled=True,
+            ab_testing_enabled=True,
+            missing_data_enabled=True,
+            script_generation_enabled=True,
+            schedule_interval_minutes=30,
+            max_concurrent_agents=4
+        )
+        ai_agent_manager = AIAgentManager(config)
+        logger.info("AI agents initialized successfully")
+    except Exception as e:
+        logger.error(f"Failed to initialize AI agents: {e}")
+
+# Initialize AI agents when app starts
+init_ai_agents()
+
+# AI Agent Routes
+@app.route('/api/ai-agents/status', methods=['GET'])
+@login_required
+@limiter.limit("10 per minute")
+def get_agent_status():
+    """Get status of all AI agents"""
+    try:
+        if ai_agent_manager:
+            import asyncio
+            status = asyncio.run(ai_agent_manager.get_agent_status())
+            return jsonify({
+                'success': True,
+                'data': status,
+                'timestamp': datetime.utcnow().isoformat()
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': 'AI agents not initialized',
+                'timestamp': datetime.utcnow().isoformat()
+            }), 500
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': str(e),
+            'timestamp': datetime.utcnow().isoformat()
+        }), 500
+
+@app.route('/api/ai-agents/workflow/<workflow_name>', methods=['POST'])
+@login_required
+@limiter.limit("5 per minute")
+def execute_workflow(workflow_name):
+    """Execute a specific workflow"""
+    try:
+        if not ai_agent_manager:
+            return jsonify({
+                'success': False,
+                'message': 'AI agents not initialized',
+                'timestamp': datetime.utcnow().isoformat()
+            }), 500
+        
+        parameters = request.get_json() or {}
+        import asyncio
+        result = asyncio.run(ai_agent_manager.execute_workflow(workflow_name, parameters))
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': str(e),
+            'timestamp': datetime.utcnow().isoformat()
+        }), 500
+
+@app.route('/api/ai-agents/scripts', methods=['GET'])
+@login_required
+@limiter.limit("10 per minute")
+def get_scripts():
+    """Get all generated scripts"""
+    try:
+        # Mock script data - in real implementation, this would query the database
+        scripts = [
+            {
+                'id': 'script_001',
+                'name': 'Equipment Update Script',
+                'description': 'Script for updating equipment data',
+                'status': 'Draft',
+                'created_at': datetime.utcnow().isoformat(),
+                'approved_at': None
+            },
+            {
+                'id': 'script_002',
+                'name': 'Functional Location Update Script',
+                'description': 'Script for updating functional location data',
+                'status': 'Approved',
+                'created_at': datetime.utcnow().isoformat(),
+                'approved_at': datetime.utcnow().isoformat()
+            }
+        ]
+        
+        return jsonify({
+            'success': True,
+            'data': scripts,
+            'timestamp': datetime.utcnow().isoformat()
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': str(e),
+            'timestamp': datetime.utcnow().isoformat()
+        }), 500
+
+@app.route('/api/ai-agents/scripts/<script_id>/approve', methods=['POST'])
+@login_required
+@limiter.limit("5 per minute")
+def approve_script(script_id):
+    """Approve a generated script"""
+    try:
+        # Mock approval - in real implementation, this would update the database
+        return jsonify({
+            'success': True,
+            'message': f'Script {script_id} approved successfully',
+            'timestamp': datetime.utcnow().isoformat()
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': str(e),
+            'timestamp': datetime.utcnow().isoformat()
+        }), 500
+
+@app.route('/api/ai-agents/rules', methods=['GET'])
+@login_required
+@limiter.limit("10 per minute")
+def get_validation_rules():
+    """Get all validation rules created by AI agents"""
+    try:
+        # Mock rule data - in real implementation, this would query the database
+        rules = [
+            {
+                'id': 'rule_001',
+                'name': 'Equipment Name Completeness',
+                'description': 'Ensures equipment names are not null',
+                'sql_condition': 'equipment_name IS NOT NULL',
+                'severity': 'High',
+                'category': 'DataQuality',
+                'created_by': 'AI Agent',
+                'created_at': datetime.utcnow().isoformat(),
+                'is_active': True
+            },
+            {
+                'id': 'rule_002',
+                'name': 'Maintenance Date Validation',
+                'description': 'Validates maintenance dates are not null and not empty',
+                'sql_condition': 'maintenance_date IS NOT NULL AND maintenance_date != \'\'',
+                'severity': 'Critical',
+                'category': 'DataQuality',
+                'created_by': 'AI Agent',
+                'created_at': datetime.utcnow().isoformat(),
+                'is_active': True
+            }
+        ]
+        
+        return jsonify({
+            'success': True,
+            'data': rules,
+            'timestamp': datetime.utcnow().isoformat()
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': str(e),
+            'timestamp': datetime.utcnow().isoformat()
+        }), 500
+
+@app.route('/api/ai-agents/tests', methods=['GET'])
+@login_required
+@limiter.limit("10 per minute")
+def get_ab_tests():
+    """Get all A/B tests"""
+    try:
+        # Mock test data - in real implementation, this would query the database
+        tests = [
+            {
+                'id': 'test_001',
+                'name': 'A/B Test: Equipment Name Completeness vs Enhanced Validation',
+                'status': 'Running',
+                'start_date': datetime.utcnow().isoformat(),
+                'end_date': None,
+                'metrics': {
+                    'rule_a_performance': 0.85,
+                    'rule_b_performance': 0.92,
+                    'statistical_significance': 0.87,
+                    'sample_size': 1000,
+                    'confidence_interval': (0.82, 0.88)
+                }
+            }
+        ]
+        
+        return jsonify({
+            'success': True,
+            'data': tests,
+            'timestamp': datetime.utcnow().isoformat()
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': str(e),
+            'timestamp': datetime.utcnow().isoformat()
+        }), 500
+
+@app.route('/api/ai-agents/tasks', methods=['GET'])
+@login_required
+@limiter.limit("10 per minute")
+def get_ai_tasks():
+    """Get all tasks created by AI agents"""
+    try:
+        # Mock task data - in real implementation, this would query the database
+        tasks = [
+            {
+                'id': 'task_001',
+                'title': 'Complete missing data for EQ001',
+                'description': 'Missing fields: manufacturer, model',
+                'priority': 'High',
+                'status': 'Open',
+                'assigned_to': None,
+                'due_date': (datetime.utcnow() + timedelta(days=7)).isoformat(),
+                'created_at': datetime.utcnow().isoformat(),
+                'entity_type': 'Equipment',
+                'entity_id': 'EQ001'
+            },
+            {
+                'id': 'task_002',
+                'title': 'Complete missing data for FL001',
+                'description': 'Missing fields: location_code',
+                'priority': 'Medium',
+                'status': 'Open',
+                'assigned_to': None,
+                'due_date': (datetime.utcnow() + timedelta(days=7)).isoformat(),
+                'created_at': datetime.utcnow().isoformat(),
+                'entity_type': 'FunctionalLocation',
+                'entity_id': 'FL001'
+            }
+        ]
+        
+        return jsonify({
+            'success': True,
+            'data': tasks,
+            'timestamp': datetime.utcnow().isoformat()
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': str(e),
+            'timestamp': datetime.utcnow().isoformat()
+        }), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080, debug=False) 
