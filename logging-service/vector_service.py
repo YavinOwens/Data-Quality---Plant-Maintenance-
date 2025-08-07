@@ -2,7 +2,8 @@ import logging
 import json
 from typing import List, Dict, Any, Optional, Tuple
 import numpy as np
-from sentence_transformers import SentenceTransformer
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import os
@@ -10,33 +11,39 @@ import os
 logger = logging.getLogger(__name__)
 
 class VectorService:
-    """Service for handling vector embeddings and semantic search"""
+    """Service for handling vector embeddings and semantic search using TF-IDF"""
     
     def __init__(self, db_config: Dict[str, str]):
         self.db_config = db_config
-        self.model = None
-        self._initialize_model()
+        self.vectorizer = None
+        self._initialize_vectorizer()
     
-    def _initialize_model(self):
-        """Initialize the sentence transformer model"""
+    def _initialize_vectorizer(self):
+        """Initialize the TF-IDF vectorizer"""
         try:
-            # Use a lightweight model for local deployment
-            self.model = SentenceTransformer('all-MiniLM-L6-v2')
-            logger.info("Vector model initialized successfully")
+            self.vectorizer = TfidfVectorizer(
+                max_features=1000,
+                stop_words='english',
+                ngram_range=(1, 2),
+                min_df=1,
+                max_df=0.9
+            )
+            logger.info("TF-IDF vectorizer initialized successfully")
         except Exception as e:
-            logger.error(f"Failed to initialize vector model: {e}")
-            self.model = None
+            logger.error(f"Failed to initialize TF-IDF vectorizer: {e}")
+            self.vectorizer = None
     
     def generate_embedding(self, text: str) -> Optional[List[float]]:
-        """Generate embedding for given text"""
-        if not self.model or not text:
+        """Generate TF-IDF embedding for given text"""
+        if not self.vectorizer or not text:
             return None
         
         try:
-            embedding = self.model.encode(text)
-            return embedding.tolist()
+            # Fit and transform the text
+            embedding = self.vectorizer.fit_transform([text])
+            return embedding.toarray()[0].tolist()
         except Exception as e:
-            logger.error(f"Failed to generate embedding: {e}")
+            logger.error(f"Failed to generate TF-IDF embedding: {e}")
             return None
     
     def store_embedding(self, data_type: str, data_id: int, content: str, metadata: Dict[str, Any] = None) -> bool:
@@ -73,7 +80,7 @@ class VectorService:
             cursor.close()
             conn.close()
             
-            logger.info(f"Stored embedding for {data_type} {data_id}")
+            logger.info(f"Stored TF-IDF embedding for {data_type} {data_id}")
             return True
             
         except Exception as e:
@@ -81,41 +88,72 @@ class VectorService:
             return False
     
     def semantic_search(self, query: str, data_types: List[str] = None, 
-                       similarity_threshold: float = 0.7, limit: int = 10) -> List[Dict[str, Any]]:
-        """Perform semantic search"""
+                       similarity_threshold: float = 0.1, limit: int = 10) -> List[Dict[str, Any]]:
+        """Perform semantic search using TF-IDF cosine similarity"""
         try:
-            query_embedding = self.generate_embedding(query)
-            if not query_embedding:
-                return []
-            
+            # Get all embeddings for the specified data types
             conn = psycopg2.connect(**self.db_config)
             cursor = conn.cursor(cursor_factory=RealDictCursor)
             
-            # Build the query
             query_sql = """
-                SELECT 
-                    id, data_type, data_id, content_text, 
-                    1 - (embedding <=> %s) as similarity, metadata
+                SELECT id, data_type, data_id, content_text, embedding, metadata
                 FROM data_embeddings
-                WHERE 1 - (embedding <=> %s) > %s
             """
-            params = [query_embedding, query_embedding, similarity_threshold]
+            params = []
             
             if data_types:
                 placeholders = ','.join(['%s'] * len(data_types))
-                query_sql += f" AND data_type IN ({placeholders})"
+                query_sql += f" WHERE data_type IN ({placeholders})"
                 params.extend(data_types)
-            
-            query_sql += " ORDER BY embedding <=> %s LIMIT %s"
-            params.extend([query_embedding, limit])
             
             cursor.execute(query_sql, params)
             results = cursor.fetchall()
             
+            if not results:
+                cursor.close()
+                conn.close()
+                return []
+            
+            # Generate query embedding
+            query_embedding = self.generate_embedding(query)
+            if not query_embedding:
+                cursor.close()
+                conn.close()
+                return []
+            
+            # Calculate similarities
+            similarities = []
+            for row in results:
+                try:
+                    stored_embedding = row['embedding']
+                    if stored_embedding:
+                        # Calculate cosine similarity
+                        similarity = cosine_similarity(
+                            [query_embedding], 
+                            [stored_embedding]
+                        )[0][0]
+                        
+                        if similarity > similarity_threshold:
+                            similarities.append({
+                                'id': row['id'],
+                                'data_type': row['data_type'],
+                                'data_id': row['data_id'],
+                                'content_text': row['content_text'],
+                                'similarity': float(similarity),
+                                'metadata': row['metadata']
+                            })
+                except Exception as e:
+                    logger.warning(f"Failed to calculate similarity for row {row['id']}: {e}")
+                    continue
+            
+            # Sort by similarity and limit results
+            similarities.sort(key=lambda x: x['similarity'], reverse=True)
+            results = similarities[:limit]
+            
             cursor.close()
             conn.close()
             
-            return [dict(row) for row in results]
+            return results
             
         except Exception as e:
             logger.error(f"Failed to perform semantic search: {e}")
@@ -223,7 +261,7 @@ class VectorService:
                 if self.store_embedding('system', health_id, content, metadata):
                     counts['system'] += 1
             
-            logger.info(f"Populated embeddings: {counts}")
+            logger.info(f"Populated TF-IDF embeddings: {counts}")
             return counts
             
         except Exception as e:
