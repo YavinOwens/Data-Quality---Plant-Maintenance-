@@ -4,15 +4,17 @@
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- Validation Results Table
+-- Unified Validation Results Table (aligned with validation-engine)
 CREATE TABLE IF NOT EXISTS validation_results (
     id SERIAL PRIMARY KEY,
-    dataset_name VARCHAR(100) NOT NULL,
-    rule_name VARCHAR(100) NOT NULL,
-    status VARCHAR(20) NOT NULL CHECK (status IN ('passed', 'failed', 'error', 'skipped')),
-    results JSONB,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    validation_type VARCHAR(100) NOT NULL,
+    validation_name VARCHAR(200) NOT NULL,
+    success_rate DECIMAL(5,4),
+    total_records INTEGER,
+    passed_records INTEGER,
+    failed_records INTEGER,
+    error_details TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Data Quality Metrics Table
@@ -93,23 +95,23 @@ CREATE TABLE IF NOT EXISTS configuration (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- Audit Log Table
-CREATE TABLE IF NOT EXISTS audit_log (
+-- Audit Logs Table (pluralized to match application)
+CREATE TABLE IF NOT EXISTS audit_logs (
     id SERIAL PRIMARY KEY,
     user_id VARCHAR(100),
+    username VARCHAR(80),
     action VARCHAR(100) NOT NULL,
-    resource_type VARCHAR(100),
-    resource_id VARCHAR(100),
-    details JSONB,
-    ip_address INET,
+    resource VARCHAR(100),
+    ip_address VARCHAR(45),
     user_agent TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    details TEXT,
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    success BOOLEAN DEFAULT TRUE
 );
 
 -- Create indexes for better performance
-CREATE INDEX IF NOT EXISTS idx_validation_results_dataset_name ON validation_results(dataset_name);
+CREATE INDEX IF NOT EXISTS idx_validation_results_type ON validation_results(validation_type);
 CREATE INDEX IF NOT EXISTS idx_validation_results_created_at ON validation_results(created_at);
-CREATE INDEX IF NOT EXISTS idx_validation_results_status ON validation_results(status);
 
 CREATE INDEX IF NOT EXISTS idx_data_quality_issues_dataset_name ON data_quality_issues(dataset_name);
 CREATE INDEX IF NOT EXISTS idx_data_quality_issues_status ON data_quality_issues(status);
@@ -124,30 +126,34 @@ CREATE INDEX IF NOT EXISTS idx_workflow_execution_logs_status ON workflow_execut
 CREATE INDEX IF NOT EXISTS idx_notifications_status ON notifications(status);
 CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON notifications(created_at);
 
-CREATE INDEX IF NOT EXISTS idx_audit_log_user_id ON audit_log(user_id);
-CREATE INDEX IF NOT EXISTS idx_audit_log_created_at ON audit_log(created_at);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp);
 
--- Create updated_at trigger function
-CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS $$
-BEGIN
-    NEW.updated_at = CURRENT_TIMESTAMP;
-    RETURN NEW;
-END;
-$$ language 'plpgsql';
+-- Risk Register Table
+CREATE TABLE IF NOT EXISTS risk_register (
+    id SERIAL PRIMARY KEY,
+    title VARCHAR(255) NOT NULL,
+    category VARCHAR(100),
+    likelihood SMALLINT CHECK (likelihood BETWEEN 1 AND 3),
+    impact SMALLINT CHECK (impact BETWEEN 1 AND 3),
+    status VARCHAR(50),
+    owner VARCHAR(100),
+    due_date DATE,
+    priority VARCHAR(20),
+    description TEXT,
+    causes TEXT,
+    consequences TEXT,
+    mitigation TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
 
--- Create triggers for updated_at
-CREATE TRIGGER update_validation_results_updated_at 
-    BEFORE UPDATE ON validation_results 
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE INDEX IF NOT EXISTS idx_risk_register_status ON risk_register(status);
+CREATE INDEX IF NOT EXISTS idx_risk_register_category ON risk_register(category);
 
-CREATE TRIGGER update_data_quality_issues_updated_at 
-    BEFORE UPDATE ON data_quality_issues 
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+-- (deprecated) Updated_at trigger not required for new validation_results
 
-CREATE TRIGGER update_configuration_updated_at 
-    BEFORE UPDATE ON configuration 
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+-- NOTE: removed updated_at triggers for unified schema
 
 -- Insert default configuration
 INSERT INTO configuration (config_key, config_value, config_type, description) VALUES
@@ -165,28 +171,28 @@ ON CONFLICT (config_key) DO NOTHING;
 -- Create views for easier reporting
 CREATE OR REPLACE VIEW validation_summary_view AS
 SELECT 
-    dataset_name,
-    rule_name,
-    status,
-    COUNT(*) as count,
-    AVG(CASE WHEN status = 'passed' THEN 1 ELSE 0 END) as success_rate,
-    MIN(created_at) as first_validation,
-    MAX(created_at) as last_validation
-FROM validation_results
-GROUP BY dataset_name, rule_name, status;
+    vr.validation_type AS dataset_name,
+    vr.validation_name AS rule_name,
+    CASE WHEN vr.success_rate >= 0.95 THEN 'passed' ELSE 'failed' END AS status,
+    COUNT(*) AS count,
+    AVG(CASE WHEN vr.success_rate >= 0.95 THEN 1 ELSE 0 END) AS success_rate,
+    MIN(vr.created_at) AS first_validation,
+    MAX(vr.created_at) AS last_validation
+FROM validation_results vr
+GROUP BY vr.validation_type, vr.validation_name, status;
 
 CREATE OR REPLACE VIEW recent_issues_view AS
 SELECT 
     i.id,
-    i.dataset_name,
-    i.rule_name,
+    COALESCE(vr.validation_type, i.dataset_name) AS dataset_name,
+    COALESCE(vr.validation_name, i.rule_name) AS rule_name,
     i.issue_type,
     i.issue_description,
     i.affected_records_count,
     i.severity,
     i.status,
     i.created_at,
-    vr.results as validation_results
+    vr.error_details AS validation_results
 FROM data_quality_issues i
 LEFT JOIN validation_results vr ON i.validation_result_id = vr.id
 WHERE i.status IN ('open', 'in_progress')
@@ -194,15 +200,13 @@ ORDER BY i.created_at DESC;
 
 CREATE OR REPLACE VIEW quality_metrics_dashboard AS
 SELECT 
-    dataset_name,
-    COUNT(*) as total_validations,
-    COUNT(CASE WHEN status = 'passed' THEN 1 END) as passed_validations,
-    COUNT(CASE WHEN status = 'failed' THEN 1 END) as failed_validations,
-    COUNT(CASE WHEN status = 'error' THEN 1 END) as error_validations,
-    ROUND(
-        (COUNT(CASE WHEN status = 'passed' THEN 1 END)::DECIMAL / COUNT(*) * 100), 2
-    ) as success_rate,
-    MAX(created_at) as last_validation
-FROM validation_results
-WHERE created_at >= CURRENT_TIMESTAMP - INTERVAL '30 days'
-GROUP BY dataset_name; 
+    vr.validation_type AS dataset_name,
+    COUNT(*) AS total_validations,
+    COUNT(CASE WHEN vr.success_rate >= 0.95 THEN 1 END) AS passed_validations,
+    COUNT(CASE WHEN vr.success_rate < 0.95 THEN 1 END) AS failed_validations,
+    0 AS error_validations,
+    ROUND((COUNT(CASE WHEN vr.success_rate >= 0.95 THEN 1 END)::DECIMAL / COUNT(*) * 100), 2) AS success_rate,
+    MAX(vr.created_at) AS last_validation
+FROM validation_results vr
+WHERE vr.created_at >= CURRENT_TIMESTAMP - INTERVAL '30 days'
+GROUP BY vr.validation_type;

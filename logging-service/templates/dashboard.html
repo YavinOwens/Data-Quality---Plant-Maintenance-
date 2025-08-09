@@ -354,7 +354,7 @@
             <div class="col-md-3">
                 <div class="card metric-card success-bg">
                     <div class="metric-value" id="total-validations">-</div>
-                    <div class="metric-label">Total Validations</div>
+                    <div class="metric-label">Total Validations <span class="badge bg-dark ms-2" id="distinct-rules-count" title="Distinct Rules">—</span></div>
                 </div>
             </div>
             <div class="col-md-3">
@@ -542,6 +542,12 @@
                             </button>
                             <button class="btn btn-outline-success btn-sm" onclick="exportRules()">
                                 <i class="fas fa-download me-1"></i>Export Rules
+                            </button>
+                            <button class="btn btn-primary btn-sm" onclick="openCreateRuleModal()">
+                                <i class="fas fa-plus me-1"></i>Create Rule
+                            </button>
+                            <button class="btn btn-warning btn-sm" onclick="runValidations()">
+                                <i class="fas fa-play me-1"></i>Run Validations
                             </button>
                         </div>
                     </div>
@@ -1419,6 +1425,7 @@
                                                     <option value="missing_data">Missing Data Detection</option>
                                                     <option value="ab_testing">A/B Testing</option>
                                                     <option value="script_generation">Script Generation</option>
+                                                    <option value="task_execution">Task Execution & Management</option>
                                                 </select>
                                             </div>
                                             <button type="submit" class="btn btn-primary">Execute Workflow</button>
@@ -1464,6 +1471,23 @@
                                     <div class="card-body">
                                         <div id="tasks-list">
                                             <p>Loading tasks...</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="col-md-4">
+                                <div class="card">
+                                    <div class="card-header">
+                                        <h5>Task Execution</h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="mb-3">
+                                            <button class="btn btn-sm btn-info" onclick="monitorTasks()">Monitor Tasks</button>
+                                            <button class="btn btn-sm btn-success" onclick="generateTaskReport()">Generate Report</button>
+                                        </div>
+                                        <div id="task-execution-result">
+                                            <p>Click to monitor tasks or generate reports</p>
                                         </div>
                                     </div>
                                 </div>
@@ -2120,6 +2144,21 @@
             document.getElementById('success-rate').textContent = averageSuccessRate + '%';
             document.getElementById('total-issues').textContent = totalFailed.toLocaleString();
             document.getElementById('failed-validations').textContent = totalFailed.toLocaleString();
+
+            // Update distinct rules badge by counting keys across dataset rules
+            try {
+                const rules = new Set();
+                Object.values(summary).forEach(dataset => {
+                    if (dataset.rules) {
+                        Object.keys(dataset.rules).forEach(ruleName => rules.add(ruleName));
+                    }
+                });
+                const el = document.getElementById('distinct-rules-count');
+                if (el) el.textContent = `${rules.size} rules`;
+            } catch (e) {
+                const el = document.getElementById('distinct-rules-count');
+                if (el) el.textContent = '—';
+            }
         }
 
         function updateDatasetTable(summary) {
@@ -2130,9 +2169,9 @@
                 const successRate = dataset.success_rate;
                 const totalValidations = dataset.total_validations;
                 
-                // Calculate passed and failed counts from success rate
+                // Calculate passed and failed counts from success rate (unified schema)
                 const passedCount = Math.round((successRate / 100) * totalValidations);
-                const failedCount = totalValidations - passedCount;
+                const failedCount = Math.max(0, totalValidations - passedCount);
                 
                 // Updated quality level thresholds based on your standards
                 let statusClass, statusText;
@@ -2380,9 +2419,9 @@
             let totalFailed = 0;
 
             Object.values(summary).forEach(dataset => {
-                // Calculate passed and failed counts from success rate (same logic as updateMetrics)
+                // Unified schema: success_rate is 0-100 percentage, derive counts
                 const passedCount = Math.round((dataset.success_rate / 100) * dataset.total_validations);
-                const failedCount = dataset.total_validations - passedCount;
+                const failedCount = Math.max(0, dataset.total_validations - passedCount);
                 totalPassed += passedCount;
                 totalFailed += failedCount;
                 console.log(`Dataset: ${dataset.total_validations} total, ${passedCount} passed, ${failedCount} failed`);
@@ -2494,8 +2533,13 @@
                     if (startDate && new Date(date) < new Date(startDate)) return;
                     if (endDate && new Date(date) > new Date(endDate)) return;
                     
-                    const successRate = data.total > 0 ? (data.passed / data.total) * 100 : 0;
-                    const failedRate = data.total > 0 ? (data.failed / data.total) * 100 : 0;
+                    // Prefer backend-provided averages if available
+                    const successRate = (typeof data.avg_success_rate === 'number')
+                        ? data.avg_success_rate
+                        : (data.total > 0 && typeof data.passed === 'number') ? (data.passed / data.total) * 100 : 0;
+                    const failedRate = (typeof data.avg_failed_rate === 'number')
+                        ? data.avg_failed_rate
+                        : (data.total > 0 && typeof data.failed === 'number') ? (data.failed / data.total) * 100 : 0;
                     
                     // Convert date string to proper Date object
                     const dateObj = new Date(date);
@@ -2752,6 +2796,38 @@
             updateRulesOverview();
             updateRulesTable();
             setupRulesFilters();
+        }
+
+        function openCreateRuleModal() {
+            const name = prompt('Rule name');
+            if (!name) return;
+            const sql = prompt('SQL condition (e.g., serial_number IS NOT NULL)');
+            if (!sql) return;
+            const severity = prompt('Severity (Low/Medium/High/Critical)', 'High');
+            const category = prompt('Category', 'DataQuality');
+            fetch('/api/rules', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ name, sql_condition: sql, severity, category })
+            }).then(r => r.json()).then(() => {
+                showAlert('Rule created', 'success');
+                loadRulesData();
+            }).catch(() => showAlert('Failed to create rule', 'danger'));
+        }
+
+        async function runValidations() {
+            try {
+                const resp = await fetch('/api/validations/run', { method: 'POST' });
+                const data = await resp.json();
+                if (data && data.success) {
+                    showAlert('Validations executed', 'success');
+                    loadDashboardData();
+                } else {
+                    showAlert('Validation run failed', 'danger');
+                }
+            } catch (e) {
+                showAlert('Validation run error', 'danger');
+            }
         }
 
         function updateRulesOverview() {
@@ -3794,19 +3870,43 @@
 
         async function loadTasksData() {
             try {
-                const response = await fetch('/api/tasks');
-                if (response.ok) {
-                    tasksData = await response.json();
-                    updateTasksOverview();
-                    updateTasksTable();
-                    updateTaskBoards();
-                    setupTasksFilters();
-                } else {
-                    // If API doesn't exist, use mock data
-                    loadMockTasksData();
+                // Load regular tasks
+                let regularTasks = [];
+                try {
+                    const response = await fetch('/api/tasks');
+                    if (response.ok) {
+                        regularTasks = await response.json();
+                    }
+                } catch (error) {
+                    console.log('Regular tasks API not available');
                 }
+
+                // Load AI agent tasks
+                let aiTasks = [];
+                try {
+                    const aiResponse = await fetch('/api/ai-agents/tasks');
+                    if (aiResponse.ok) {
+                        const aiData = await aiResponse.json();
+                        aiTasks = aiData.data || [];
+                    }
+                } catch (error) {
+                    console.log('AI tasks API not available');
+                }
+
+                // Merge regular tasks and AI tasks
+                const allTasks = [...regularTasks, ...aiTasks];
+                
+                // Update tasksData with merged data
+                tasksData = allTasks;
+                
+                updateTasksOverview();
+                updateTasksTable();
+                updateTaskBoards();
+                setupTasksFilters();
+                
+                console.log(`Loaded ${regularTasks.length} regular tasks and ${aiTasks.length} AI tasks`);
             } catch (error) {
-                console.log('Tasks API not available, using mock data');
+                console.log('Error loading tasks, using mock data');
                 loadMockTasksData();
             }
         }
@@ -3828,8 +3928,39 @@
                 
                 // Setup workflow form
                 setupWorkflowForm();
+                
+                // Sync AI tasks with Task Management
+                await syncAITasksWithTaskManagement();
             } catch (error) {
                 console.error('Error loading AI agent data:', error);
+            }
+        }
+
+        async function syncAITasksWithTaskManagement() {
+            try {
+                // Load AI tasks and merge with existing task data
+                const aiResponse = await fetch('/api/ai-agents/tasks');
+                if (aiResponse.ok) {
+                    const aiData = await aiResponse.json();
+                    const aiTasks = aiData.data || [];
+                    
+                    // Add AI tasks to the main task data
+                    if (aiTasks.length > 0) {
+                        // Merge with existing tasks, avoiding duplicates
+                        const existingTaskIds = new Set(tasksData.map(t => t.id));
+                        const newAITasks = aiTasks.filter(task => !existingTaskIds.has(task.id));
+                        
+                        if (newAITasks.length > 0) {
+                            tasksData = [...tasksData, ...newAITasks];
+                            updateTasksOverview();
+                            updateTasksTable();
+                            updateTaskBoards();
+                            console.log(`Synced ${newAITasks.length} new AI tasks with Task Management`);
+                        }
+                    }
+                }
+            } catch (error) {
+                console.log('Error syncing AI tasks:', error);
             }
         }
 
@@ -3932,10 +4063,11 @@
 
         async function loadValidationRules() {
             try {
-                const response = await fetch('/api/ai-agents/rules');
+                const response = await fetch('/api/rules');
                 if (response.ok) {
                     const data = await response.json();
-                    updateRulesList(data.data);
+                    // /api/rules returns a plain array
+                    updateRulesList(Array.isArray(data) ? data : (data.data || []));
                 } else {
                     console.log('Rules API not available');
                     updateRulesList([]);
@@ -3996,6 +4128,95 @@
             }
         }
 
+        // Task Execution Functions
+        async function monitorTasks() {
+            try {
+                const response = await fetch('/api/ai-agents/task-execution', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        operation: 'monitor'
+                    })
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    updateTaskExecutionResult(data.data);
+                } else {
+                    console.log('Task execution API not available');
+                    updateTaskExecutionResult({ error: 'API not available' });
+                }
+            } catch (error) {
+                console.log('Task execution API error:', error);
+                updateTaskExecutionResult({ error: error.message });
+            }
+        }
+
+        async function generateTaskReport() {
+            try {
+                const response = await fetch('/api/ai-agents/task-execution', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        operation: 'generate_report'
+                    })
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    updateTaskExecutionResult(data.data);
+                } else {
+                    console.log('Task report generation API not available');
+                    updateTaskExecutionResult({ error: 'API not available' });
+                }
+            } catch (error) {
+                console.log('Task report generation API error:', error);
+                updateTaskExecutionResult({ error: error.message });
+            }
+        }
+
+        function updateTaskExecutionResult(data) {
+            const resultDiv = document.getElementById('task-execution-result');
+            if (!resultDiv) return;
+
+            if (data.error) {
+                resultDiv.innerHTML = `<p class="text-danger">Error: ${data.error}</p>`;
+                return;
+            }
+
+            if (data.report_type === 'task_management') {
+                // Display task management report
+                let html = `
+                    <div class="alert alert-info">
+                        <h6>Task Management Report</h6>
+                        <p><strong>Total Tasks:</strong> ${data.summary.total_tasks}</p>
+                        <p><strong>Overdue Tasks:</strong> ${data.summary.overdue_tasks}</p>
+                        <p><strong>Efficiency Ratio:</strong> ${data.summary.efficiency_ratio}</p>
+                        <p><strong>Estimated Hours:</strong> ${data.summary.total_estimated_hours}</p>
+                        <p><strong>Actual Hours:</strong> ${data.summary.total_actual_hours}</p>
+                    </div>
+                `;
+                resultDiv.innerHTML = html;
+            } else {
+                // Display task monitoring results
+                let html = `
+                    <div class="alert alert-success">
+                        <h6>Task Monitoring Results</h6>
+                        <p><strong>Total Tasks:</strong> ${data.total_tasks}</p>
+                        <p><strong>Completed:</strong> ${data.completed_tasks}</p>
+                        <p><strong>In Progress:</strong> ${data.in_progress_tasks}</p>
+                        <p><strong>Overdue:</strong> ${data.overdue_tasks}</p>
+                        <p><strong>Average Completion:</strong> ${data.average_completion}%</p>
+                    </div>
+                `;
+                resultDiv.innerHTML = html;
+            }
+        }
+
         function updateTasksList(tasks) {
             const tasksDiv = document.getElementById('tasks-list');
             if (!tasksDiv) return;
@@ -4038,6 +4259,218 @@
             tasksDiv.innerHTML = html;
         }
 
+        function formatWorkflowData(data) {
+            if (!data) return '<p class="text-muted">No data available</p>';
+            
+            // Handle different data types
+            if (data.report_type === 'task_management') {
+                return formatTaskManagementReport(data);
+            } else if (data.total_tasks !== undefined) {
+                return formatTaskMonitoringData(data);
+            } else if (Array.isArray(data)) {
+                return formatTaskList(data);
+            } else {
+                // Fallback to formatted JSON
+                return `
+                    <div class="bg-light p-3 rounded">
+                        <h6>Data Output:</h6>
+                        <pre class="mb-0" style="font-size: 0.85em; max-height: 300px; overflow-y: auto;">${JSON.stringify(data, null, 2)}</pre>
+                    </div>
+                `;
+            }
+        }
+
+        function formatTaskManagementReport(data) {
+            const summary = data.summary || {};
+            const recentActivities = data.recent_activities || [];
+            const statusDistribution = data.status_distribution || {};
+            const priorityDistribution = data.priority_distribution || {};
+            
+            return `
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header">
+                                <h6 class="mb-0">Summary</h6>
+                            </div>
+                            <div class="card-body">
+                                <div class="row text-center">
+                                    <div class="col-6">
+                                        <h4 class="text-primary">${summary.total_tasks || 0}</h4>
+                                        <small class="text-muted">Total Tasks</small>
+                                    </div>
+                                    <div class="col-6">
+                                        <h4 class="text-danger">${summary.overdue_tasks || 0}</h4>
+                                        <small class="text-muted">Overdue</small>
+                                    </div>
+                                </div>
+                                <hr>
+                                <div class="row text-center">
+                                    <div class="col-6">
+                                        <h5 class="text-success">${summary.total_estimated_hours || 0}h</h5>
+                                        <small class="text-muted">Estimated</small>
+                                    </div>
+                                    <div class="col-6">
+                                        <h5 class="text-info">${summary.total_actual_hours || 0}h</h5>
+                                        <small class="text-muted">Actual</small>
+                                    </div>
+                                </div>
+                                <hr>
+                                <div class="text-center">
+                                    <h5 class="text-warning">${summary.efficiency_ratio || 0}%</h5>
+                                    <small class="text-muted">Efficiency Ratio</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header">
+                                <h6 class="mb-0">Distribution</h6>
+                            </div>
+                            <div class="card-body">
+                                <div class="mb-3">
+                                    <h6>Status Distribution:</h6>
+                                    ${Object.entries(statusDistribution).map(([status, count]) => 
+                                        `<div class="d-flex justify-content-between">
+                                            <span>${status}</span>
+                                            <span class="badge bg-secondary">${count}</span>
+                                        </div>`
+                                    ).join('')}
+                                </div>
+                                <div>
+                                    <h6>Priority Distribution:</h6>
+                                    ${Object.entries(priorityDistribution).map(([priority, count]) => 
+                                        `<div class="d-flex justify-content-between">
+                                            <span>${priority}</span>
+                                            <span class="badge bg-secondary">${count}</span>
+                                        </div>`
+                                    ).join('')}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                ${recentActivities.length > 0 ? `
+                    <div class="mt-3">
+                        <h6>Recent Activities:</h6>
+                        <div class="list-group">
+                            ${recentActivities.slice(0, 5).map(task => `
+                                <div class="list-group-item">
+                                    <div class="d-flex justify-content-between align-items-start">
+                                        <div>
+                                            <h6 class="mb-1">${task.title}</h6>
+                                            <p class="mb-1 small text-muted">${task.description}</p>
+                                            <small class="text-muted">${task.entity_type} - ${task.entity_id}</small>
+                                        </div>
+                                        <div class="text-end">
+                                            <span class="badge ${task.priority === 'High' ? 'bg-danger' : task.priority === 'Medium' ? 'bg-warning' : 'bg-secondary'}">${task.priority}</span>
+                                            <br><span class="badge ${task.status === 'Open' ? 'bg-warning' : 'bg-success'}">${task.status}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                ` : ''}
+            `;
+        }
+
+        function formatTaskMonitoringData(data) {
+            return `
+                <div class="row">
+                    <div class="col-md-3">
+                        <div class="card bg-primary text-white text-center">
+                            <div class="card-body">
+                                <h4>${data.total_tasks || 0}</h4>
+                                <small>Total Tasks</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-success text-white text-center">
+                            <div class="card-body">
+                                <h4>${data.completed_tasks || 0}</h4>
+                                <small>Completed</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-warning text-white text-center">
+                            <div class="card-body">
+                                <h4>${data.in_progress_tasks || 0}</h4>
+                                <small>In Progress</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-danger text-white text-center">
+                            <div class="card-body">
+                                <h4>${data.overdue_tasks || 0}</h4>
+                                <small>Overdue</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-3">
+                    <div class="progress">
+                        <div class="progress-bar bg-success" style="width: ${data.average_completion || 0}%">
+                            ${data.average_completion || 0}% Complete
+                        </div>
+                    </div>
+                    <small class="text-muted">Average Completion Rate</small>
+                </div>
+                ${data.recent_tasks && data.recent_tasks.length > 0 ? `
+                    <div class="mt-3">
+                        <h6>Recent Tasks:</h6>
+                        <div class="list-group">
+                            ${data.recent_tasks.slice(0, 3).map(task => `
+                                <div class="list-group-item">
+                                    <div class="d-flex justify-content-between align-items-start">
+                                        <div>
+                                            <h6 class="mb-1">${task.title}</h6>
+                                            <p class="mb-1 small text-muted">${task.description}</p>
+                                            <small class="text-muted">Due: ${new Date(task.due_date).toLocaleDateString()}</small>
+                                        </div>
+                                        <div class="text-end">
+                                            <span class="badge ${task.priority === 'High' ? 'bg-danger' : task.priority === 'Medium' ? 'bg-warning' : 'bg-secondary'}">${task.priority}</span>
+                                            <br><span class="badge ${task.status === 'Open' ? 'bg-warning' : 'bg-success'}">${task.status}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                ` : ''}
+            `;
+        }
+
+        function formatTaskList(tasks) {
+            if (tasks.length === 0) {
+                return '<p class="text-muted">No tasks available</p>';
+            }
+            
+            return `
+                <div class="list-group">
+                    ${tasks.map(task => `
+                        <div class="list-group-item">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <h6 class="mb-1">${task.title}</h6>
+                                    <p class="mb-1 small text-muted">${task.description}</p>
+                                    <small class="text-muted">${task.entity_type} - ${task.entity_id}</small>
+                                </div>
+                                <div class="text-end">
+                                    <span class="badge ${task.priority === 'High' ? 'bg-danger' : task.priority === 'Medium' ? 'bg-warning' : 'bg-secondary'}">${task.priority}</span>
+                                    <br><span class="badge ${task.status === 'Open' ? 'bg-warning' : 'bg-success'}">${task.status}</span>
+                                </div>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+
         function setupWorkflowForm() {
             const form = document.getElementById('workflow-form');
             if (!form) return;
@@ -4066,7 +4499,9 @@
                         resultDiv.innerHTML = `
                             <div class="alert alert-success">
                                 <strong>Success!</strong> ${result.message}
-                                <br><small>Data: ${JSON.stringify(result.data)}</small>
+                                <div class="mt-3">
+                                    ${formatWorkflowData(result.data)}
+                                </div>
                             </div>
                         `;
                     } else {
@@ -4177,10 +4612,10 @@
 
         function updateTasksOverview() {
             const totalTasks = tasksData.length;
-            const inProgressTasks = tasksData.filter(t => t.status === 'in_progress').length;
-            const completedTasks = tasksData.filter(t => t.status === 'completed').length;
+            const inProgressTasks = tasksData.filter(t => t.status === 'in_progress' || t.status === 'In Progress').length;
+            const completedTasks = tasksData.filter(t => t.status === 'completed' || t.status === 'Completed').length;
             const overdueTasks = tasksData.filter(t => {
-                if (!t.dueDate || t.status === 'completed') return false;
+                if (!t.dueDate || t.status === 'completed' || t.status === 'Completed') return false;
                 return new Date(t.dueDate) < new Date();
             }).length;
 
@@ -4571,7 +5006,32 @@
 
         function refreshTasks() {
             loadTasksData();
+            // Also refresh AI agent task monitoring
+            refreshAITaskMonitoring();
             showAlert('Task management refreshed', 'info');
+        }
+
+        async function refreshAITaskMonitoring() {
+            try {
+                const response = await fetch('/api/ai-agents/task-execution', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        operation: 'monitor'
+                    })
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log('AI Task monitoring refreshed:', data.data);
+                    // Update the task execution result in AI Agent Hub
+                    updateTaskExecutionResult(data.data);
+                }
+            } catch (error) {
+                console.log('Error refreshing AI task monitoring:', error);
+            }
         }
 
         function exportTasks() {

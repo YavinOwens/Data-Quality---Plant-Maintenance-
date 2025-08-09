@@ -293,6 +293,21 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        async function apiFetch(url, options = {}) {
+            try {
+                const res = await fetch(url, options);
+                const cid = res.headers.get('X-Correlation-Id');
+                if (!res.ok) {
+                    let body = {};
+                    try { body = await res.json(); } catch (_) {}
+                    console.error('API error', { url, status: res.status, body, correlation_id: cid });
+                }
+                return res;
+            } catch (err) {
+                console.error('Network error', { url, error: String(err) });
+                throw err;
+            }
+        }
         // Global variables
         let securityChart = null;
         let timelineChart = null;
@@ -307,7 +322,7 @@
 
         function loadSecurityData() {
             // Load security events
-            fetch('/api/security/events')
+            apiFetch('/api/security/events')
                 .then(response => response.json())
                 .then(data => {
                     updateSecurityMetrics(data);
@@ -319,7 +334,7 @@
                 });
 
             // Load audit summary
-            fetch('/api/security/audit/summary')
+            apiFetch('/api/security/audit/summary')
                 .then(response => response.json())
                 .then(data => {
                     updateUserActivityTable(data);
@@ -434,7 +449,7 @@
                 return;
             }
 
-            fetch('/api/security/dlp/check', {
+            apiFetch('/api/security/dlp/check', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -474,7 +489,7 @@
                 return;
             }
 
-            fetch('/api/security/mask', {
+            apiFetch('/api/security/mask', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -506,7 +521,7 @@
         }
 
         function checkCacheStatus() {
-            fetch('/api/security/cache/status')
+            apiFetch('/api/security/cache/status')
                 .then(response => response.json())
                 .then(data => {
                     const statusDiv = document.getElementById('cache-status');
@@ -531,7 +546,7 @@
         }
 
         function checkLBHealth() {
-            fetch('/health/lb')
+            apiFetch('/health/lb')
                 .then(response => response.json())
                 .then(data => {
                     const statusDiv = document.getElementById('lb-status');
@@ -551,7 +566,7 @@
 
         function clearCache() {
             if (confirm('Are you sure you want to clear the cache?')) {
-                fetch('/api/security/cache/clear', { method: 'POST' })
+                apiFetch('/api/security/cache/clear', { method: 'POST' })
                     .then(response => response.json())
                     .then(data => {
                         alert('Cache cleared successfully');
@@ -565,7 +580,7 @@
         }
 
         function generateComplianceReport() {
-            fetch('/api/compliance/report')
+            apiFetch('/api/compliance/report')
                 .then(response => response.json())
                 .then(data => {
                     if (data.error) {

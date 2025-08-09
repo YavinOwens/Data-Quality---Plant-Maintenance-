@@ -163,7 +163,7 @@ class ValidationRuleAgent(BaseAgent):
     
     def __init__(self):
         super().__init__("ValidationRuleAgent")
-        self.rule_repository = RuleRepository()
+        self.rule_repository = get_rule_repository()
 
     async def _execute_impl(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
         dataset = input_data.get("dataset", "equipment_data")
@@ -234,7 +234,7 @@ class ABTestingAgent(BaseAgent):
     
     def __init__(self):
         super().__init__("ABTestingAgent")
-        self.test_repository = TestRepository()
+        self.test_repository = get_test_repository()
 
     async def _execute_impl(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
         rule_a_data = input_data.get("rule_a")
@@ -271,7 +271,7 @@ class MissingDataAgent(BaseAgent):
     
     def __init__(self):
         super().__init__("MissingDataAgent")
-        self.task_repository = TaskRepository()
+        self.task_repository = get_task_repository()
 
     async def _execute_impl(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
         # Scan for missing data
@@ -323,6 +323,157 @@ class MissingDataAgent(BaseAgent):
         
         return tasks
 
+class TaskExecutionAgent(BaseAgent):
+    """Agent for executing and managing tasks"""
+    
+    def __init__(self):
+        super().__init__("TaskExecutionAgent")
+        self.task_repository = get_task_repository()
+
+    async def _execute_impl(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute task management operations"""
+        operation = input_data.get("operation", "monitor")
+        
+        if operation == "monitor":
+            return await self._monitor_tasks()
+        elif operation == "execute":
+            task_id = input_data.get("task_id")
+            return await self._execute_task(task_id)
+        elif operation == "update_status":
+            task_id = input_data.get("task_id")
+            status = input_data.get("status")
+            completion = input_data.get("completion_percentage")
+            return await self._update_task_status(task_id, status, completion)
+        elif operation == "generate_report":
+            return await self._generate_task_report()
+        else:
+            return {"error": f"Unknown operation: {operation}"}
+
+    async def _monitor_tasks(self) -> Dict[str, Any]:
+        """Monitor all tasks and their status"""
+        try:
+            all_tasks = await self.task_repository.get_tasks()
+            overdue_tasks = await self.task_repository.get_overdue_tasks()
+            
+            # Calculate statistics
+            total_tasks = len(all_tasks)
+            completed_tasks = len([t for t in all_tasks if t['status'] == 'Completed'])
+            in_progress_tasks = len([t for t in all_tasks if t['status'] == 'In Progress'])
+            overdue_count = len(overdue_tasks)
+            
+            # Calculate average completion percentage
+            completion_percentages = [t.get('completion_percentage', 0) for t in all_tasks if t.get('completion_percentage')]
+            avg_completion = sum(completion_percentages) / len(completion_percentages) if completion_percentages else 0
+            
+            return {
+                "total_tasks": total_tasks,
+                "completed_tasks": completed_tasks,
+                "in_progress_tasks": in_progress_tasks,
+                "overdue_tasks": overdue_count,
+                "average_completion": round(avg_completion, 2),
+                "overdue_tasks_list": overdue_tasks[:5],  # Top 5 overdue
+                "recent_tasks": all_tasks[:10]  # Recent 10 tasks
+            }
+        except Exception as e:
+            logger.error(f"Error monitoring tasks: {e}")
+            return {"error": str(e)}
+
+    async def _execute_task(self, task_id: str) -> Dict[str, Any]:
+        """Execute a specific task"""
+        try:
+            # Get task details
+            tasks = await self.task_repository.get_tasks()
+            task = next((t for t in tasks if t['id'] == task_id), None)
+            
+            if not task:
+                return {"error": f"Task {task_id} not found"}
+            
+            # Simulate task execution based on task type
+            task_type = task.get('task_type', 'Manual')
+            automation_level = task.get('automation_level', 'None')
+            
+            if automation_level == 'Full':
+                # Fully automated task
+                await self.task_repository.update_task_status(task_id, 'Completed', 100.0)
+                result = {"status": "completed", "automation": "full"}
+            elif automation_level == 'Partial':
+                # Partially automated task
+                await self.task_repository.update_task_status(task_id, 'In Progress', 75.0)
+                result = {"status": "in_progress", "automation": "partial", "completion": 75.0}
+            else:
+                # Manual task - mark as ready for human intervention
+                await self.task_repository.update_task_status(task_id, 'Ready for Execution', 0.0)
+                result = {"status": "ready_for_execution", "automation": "manual"}
+            
+            return {
+                "task_id": task_id,
+                "task_title": task['title'],
+                "execution_result": result,
+                "message": f"Task '{task['title']}' execution initiated"
+            }
+        except Exception as e:
+            logger.error(f"Error executing task {task_id}: {e}")
+            return {"error": str(e)}
+
+    async def _update_task_status(self, task_id: str, status: str, completion_percentage: float = None) -> Dict[str, Any]:
+        """Update task status and completion percentage"""
+        try:
+            await self.task_repository.update_task_status(task_id, status, completion_percentage)
+            return {
+                "task_id": task_id,
+                "status": status,
+                "completion_percentage": completion_percentage,
+                "message": f"Task {task_id} status updated to {status}"
+            }
+        except Exception as e:
+            logger.error(f"Error updating task {task_id}: {e}")
+            return {"error": str(e)}
+
+    async def _generate_task_report(self) -> Dict[str, Any]:
+        """Generate comprehensive task management report"""
+        try:
+            all_tasks = await self.task_repository.get_tasks()
+            overdue_tasks = await self.task_repository.get_overdue_tasks()
+            
+            # Calculate detailed statistics
+            status_counts = {}
+            priority_counts = {}
+            automation_counts = {}
+            
+            for task in all_tasks:
+                status = task.get('status', 'Unknown')
+                priority = task.get('priority', 'Unknown')
+                automation = task.get('automation_level', 'Unknown')
+                
+                status_counts[status] = status_counts.get(status, 0) + 1
+                priority_counts[priority] = priority_counts.get(priority, 0) + 1
+                automation_counts[automation] = automation_counts.get(automation, 0) + 1
+            
+            # Calculate efficiency metrics
+            total_hours_estimated = sum(t.get('estimated_hours', 0) for t in all_tasks)
+            total_hours_actual = sum(t.get('actual_hours', 0) for t in all_tasks)
+            efficiency_ratio = total_hours_actual / total_hours_estimated if total_hours_estimated > 0 else 0
+            
+            return {
+                "report_type": "task_management",
+                "generated_at": datetime.utcnow().isoformat(),
+                "summary": {
+                    "total_tasks": len(all_tasks),
+                    "overdue_tasks": len(overdue_tasks),
+                    "efficiency_ratio": round(efficiency_ratio, 2),
+                    "total_estimated_hours": round(total_hours_estimated, 2),
+                    "total_actual_hours": round(total_hours_actual, 2)
+                },
+                "status_distribution": status_counts,
+                "priority_distribution": priority_counts,
+                "automation_distribution": automation_counts,
+                "overdue_tasks": overdue_tasks,
+                "recent_activities": all_tasks[:20]
+            }
+        except Exception as e:
+            logger.error(f"Error generating task report: {e}")
+            return {"error": str(e)}
+
 class ScriptGenerationAgent(BaseAgent):
     """Agent for generating Excel scripts"""
     
@@ -357,8 +508,68 @@ class ScriptGenerationAgent(BaseAgent):
         
         template_path = template_dir / f"{entity_type.lower()}_template.xlsx"
         
-        # In a real implementation, this would create an actual Excel file
-        # For now, we'll just return the path
+        # Create actual Excel file with template structure
+        try:
+            import openpyxl
+            from openpyxl.styles import Font, PatternFill, Alignment
+            
+            # Create workbook and worksheet
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = f"{entity_type} Template"
+            
+            # Define headers based on entity type
+            if entity_type.lower() == "equipment":
+                headers = ["Equipment_ID", "Equipment_Name", "Manufacturer", "Model", "Serial_Number", "Location", "Status", "Last_Maintenance", "Next_Maintenance"]
+            elif entity_type.lower() == "functionallocation":
+                headers = ["Location_ID", "Location_Name", "Location_Code", "Parent_Location", "Equipment_Count", "Status", "Description"]
+            elif entity_type.lower() == "maintenanceorder":
+                headers = ["Order_ID", "Equipment_ID", "Order_Type", "Priority", "Description", "Planned_Date", "Actual_Date", "Status", "Assigned_To"]
+            else:
+                headers = ["ID", "Name", "Description", "Status", "Created_Date"]
+            
+            # Style for headers
+            header_font = Font(bold=True, color="FFFFFF")
+            header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+            header_alignment = Alignment(horizontal="center", vertical="center")
+            
+            # Add headers
+            for col, header in enumerate(headers, 1):
+                cell = ws.cell(row=1, column=col, value=header)
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.alignment = header_alignment
+            
+            # Add sample data row
+            sample_data = ["SAMPLE_" + str(i+1) for i in range(len(headers))]
+            for col, value in enumerate(sample_data, 1):
+                ws.cell(row=2, column=col, value=value)
+            
+            # Auto-adjust column widths
+            for column in ws.columns:
+                max_length = 0
+                column_letter = column[0].column_letter
+                for cell in column:
+                    try:
+                        if len(str(cell.value)) > max_length:
+                            max_length = len(str(cell.value))
+                    except:
+                        pass
+                adjusted_width = min(max_length + 2, 50)
+                ws.column_dimensions[column_letter].width = adjusted_width
+            
+            # Save the file
+            wb.save(str(template_path))
+            logger.info(f"Created Excel template: {template_path}")
+            
+        except ImportError:
+            logger.warning("openpyxl not available, creating placeholder file")
+            # Create a simple text file as fallback
+            with open(template_path, 'w') as f:
+                f.write(f"# {entity_type} Template\n")
+                f.write("# This is a placeholder template\n")
+                f.write("# Install openpyxl for proper Excel generation\n")
+        
         return str(template_path)
 
 class AIAgentManager:
@@ -386,6 +597,9 @@ class AIAgentManager:
         
         if self.config.script_generation_enabled:
             self.agents['script_generation'] = ScriptGenerationAgent()
+        
+        # Add Task Execution Agent
+        self.agents['task_execution'] = TaskExecutionAgent()
         
         logger.info(f"Initialized {len(self.agents)} AI agents")
 
@@ -598,6 +812,10 @@ class AIAgentManager:
         self.is_running = False
 
 # Repository classes for data persistence
+# -----------------------------
+# SQLite repositories (existing)
+# -----------------------------
+
 class RuleRepository:
     """Repository for validation rules"""
     
@@ -704,7 +922,14 @@ class TaskRepository:
                     due_date TEXT,
                     created_at TEXT,
                     entity_type TEXT,
-                    entity_id TEXT
+                    entity_id TEXT,
+                    task_type TEXT,
+                    automation_level TEXT,
+                    estimated_hours REAL,
+                    actual_hours REAL,
+                    completion_percentage REAL,
+                    dependencies TEXT,
+                    tags TEXT
                 )
             """)
 
@@ -713,12 +938,334 @@ class TaskRepository:
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("""
                 INSERT OR REPLACE INTO tasks 
-                (id, title, description, priority, status, assigned_to, due_date, created_at, entity_type, entity_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (id, title, description, priority, status, assigned_to, due_date, created_at, entity_type, entity_id,
+                 task_type, automation_level, estimated_hours, actual_hours, completion_percentage, dependencies, tags)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 task.id, task.title, task.description, task.priority,
                 task.status, task.assigned_to,
                 task.due_date.isoformat() if task.due_date else None,
                 task.created_at.isoformat(),
-                task.entity_type, task.entity_id
-            )) 
+                task.entity_type, task.entity_id,
+                getattr(task, 'task_type', 'Manual'),
+                getattr(task, 'automation_level', 'None'),
+                getattr(task, 'estimated_hours', 0.0),
+                getattr(task, 'actual_hours', 0.0),
+                getattr(task, 'completion_percentage', 0.0),
+                json.dumps(getattr(task, 'dependencies', [])),
+                json.dumps(getattr(task, 'tags', []))
+            ))
+
+    async def get_tasks(self, status: str = None, priority: str = None) -> List[Dict]:
+        """Get tasks with optional filtering"""
+        with sqlite3.connect(self.db_path) as conn:
+            query = "SELECT * FROM tasks WHERE 1=1"
+            params = []
+            
+            if status:
+                query += " AND status = ?"
+                params.append(status)
+            
+            if priority:
+                query += " AND priority = ?"
+                params.append(priority)
+            
+            query += " ORDER BY created_at DESC"
+            
+            cursor = conn.execute(query, params)
+            columns = [description[0] for description in cursor.description]
+            return [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+    async def update_task_status(self, task_id: str, status: str, completion_percentage: float = None):
+        """Update task status and completion percentage"""
+        with sqlite3.connect(self.db_path) as conn:
+            if completion_percentage is not None:
+                conn.execute("""
+                    UPDATE tasks SET status = ?, completion_percentage = ? WHERE id = ?
+                """, (status, completion_percentage, task_id))
+            else:
+                conn.execute("""
+                    UPDATE tasks SET status = ? WHERE id = ?
+                """, (status, task_id))
+
+    async def get_overdue_tasks(self) -> List[Dict]:
+        """Get overdue tasks"""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute("""
+                SELECT * FROM tasks 
+                WHERE due_date < ? AND status != 'Completed'
+                ORDER BY due_date ASC
+            """, (datetime.utcnow().isoformat(),))
+            
+            columns = [description[0] for description in cursor.description]
+            return [dict(zip(columns, row)) for row in cursor.fetchall()] 
+
+
+# ---------------------------------
+# Postgres repositories (new)
+# ---------------------------------
+
+def use_postgres_storage() -> bool:
+    storage = os.getenv("AI_AGENTS_STORAGE", "postgres").strip().lower()
+    return storage in ("pg", "postgres", "postgresql")
+
+
+def get_rule_repository():
+    if use_postgres_storage():
+        return PgRuleRepository()
+    return RuleRepository()
+
+
+def get_test_repository():
+    if use_postgres_storage():
+        return PgTestRepository()
+    return TestRepository()
+
+
+def get_task_repository():
+    if use_postgres_storage():
+        return PgTaskRepository()
+    return TaskRepository()
+
+
+try:
+    # Import lazily so SQLite-only environments still work
+    from .pg_repo import get_pg_connection
+except Exception:
+    # Fallback when running this module standalone
+    from pg_repo import get_pg_connection  # type: ignore
+
+
+class PgRuleRepository:
+    def __init__(self):
+        self._ensure_table()
+
+    def _ensure_table(self):
+        with get_pg_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS validation_rules (
+                        id TEXT PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        description TEXT,
+                        sql_condition TEXT NOT NULL,
+                        severity TEXT,
+                        category TEXT,
+                        created_by TEXT,
+                        created_at TIMESTAMP,
+                        is_active BOOLEAN,
+                        performance_metrics JSONB
+                    )
+                    """
+                )
+
+    async def save_rule(self, rule: ValidationRule):
+        with get_pg_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO validation_rules (
+                        id, name, description, sql_condition, severity, category, created_by, created_at, is_active, performance_metrics
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (id) DO UPDATE SET
+                        name = EXCLUDED.name,
+                        description = EXCLUDED.description,
+                        sql_condition = EXCLUDED.sql_condition,
+                        severity = EXCLUDED.severity,
+                        category = EXCLUDED.category,
+                        created_by = EXCLUDED.created_by,
+                        created_at = EXCLUDED.created_at,
+                        is_active = EXCLUDED.is_active,
+                        performance_metrics = EXCLUDED.performance_metrics
+                    """,
+                    (
+                        rule.id,
+                        rule.name,
+                        rule.description,
+                        rule.sql_condition,
+                        rule.severity,
+                        rule.category,
+                        rule.created_by,
+                        rule.created_at,
+                        rule.is_active,
+                        json.dumps(rule.performance_metrics),
+                    ),
+                )
+
+
+class PgTestRepository:
+    def __init__(self):
+        self._ensure_table()
+
+    def _ensure_table(self):
+        with get_pg_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS ab_tests (
+                        id TEXT PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        rule_a JSONB,
+                        rule_b JSONB,
+                        start_date TIMESTAMP,
+                        end_date TIMESTAMP,
+                        status TEXT,
+                        metrics JSONB
+                    )
+                    """
+                )
+
+    async def save_test(self, test: ABTest):
+        with get_pg_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO ab_tests (
+                        id, name, rule_a, rule_b, start_date, end_date, status, metrics
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (id) DO UPDATE SET
+                        name = EXCLUDED.name,
+                        rule_a = EXCLUDED.rule_a,
+                        rule_b = EXCLUDED.rule_b,
+                        start_date = EXCLUDED.start_date,
+                        end_date = EXCLUDED.end_date,
+                        status = EXCLUDED.status,
+                        metrics = EXCLUDED.metrics
+                    """,
+                    (
+                        test.id,
+                        test.name,
+                        json.dumps({"id": test.rule_a.id, "name": test.rule_a.name}),
+                        json.dumps({"id": test.rule_b.id, "name": test.rule_b.name}),
+                        test.start_date,
+                        test.end_date,
+                        test.status,
+                        json.dumps(test.metrics),
+                    ),
+                )
+
+
+class PgTaskRepository:
+    def __init__(self):
+        self._ensure_table()
+
+    def _ensure_table(self):
+        with get_pg_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS tasks (
+                        id TEXT PRIMARY KEY,
+                        title TEXT NOT NULL,
+                        description TEXT,
+                        priority TEXT,
+                        status TEXT,
+                        assigned_to TEXT,
+                        due_date TIMESTAMP,
+                        created_at TIMESTAMP,
+                        entity_type TEXT,
+                        entity_id TEXT,
+                        task_type TEXT,
+                        automation_level TEXT,
+                        estimated_hours DOUBLE PRECISION,
+                        actual_hours DOUBLE PRECISION,
+                        completion_percentage DOUBLE PRECISION,
+                        dependencies JSONB,
+                        tags JSONB
+                    )
+                    """
+                )
+
+    async def save_task(self, task: Task):
+        with get_pg_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO tasks (
+                        id, title, description, priority, status, assigned_to, due_date, created_at, entity_type, entity_id,
+                        task_type, automation_level, estimated_hours, actual_hours, completion_percentage, dependencies, tags
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (id) DO UPDATE SET
+                        title = EXCLUDED.title,
+                        description = EXCLUDED.description,
+                        priority = EXCLUDED.priority,
+                        status = EXCLUDED.status,
+                        assigned_to = EXCLUDED.assigned_to,
+                        due_date = EXCLUDED.due_date,
+                        created_at = EXCLUDED.created_at,
+                        entity_type = EXCLUDED.entity_type,
+                        entity_id = EXCLUDED.entity_id,
+                        task_type = EXCLUDED.task_type,
+                        automation_level = EXCLUDED.automation_level,
+                        estimated_hours = EXCLUDED.estimated_hours,
+                        actual_hours = EXCLUDED.actual_hours,
+                        completion_percentage = EXCLUDED.completion_percentage,
+                        dependencies = EXCLUDED.dependencies,
+                        tags = EXCLUDED.tags
+                    """,
+                    (
+                        task.id,
+                        task.title,
+                        task.description,
+                        task.priority,
+                        task.status,
+                        task.assigned_to,
+                        task.due_date,
+                        task.created_at,
+                        task.entity_type,
+                        task.entity_id,
+                        getattr(task, 'task_type', 'Manual'),
+                        getattr(task, 'automation_level', 'None'),
+                        getattr(task, 'estimated_hours', 0.0),
+                        getattr(task, 'actual_hours', 0.0),
+                        getattr(task, 'completion_percentage', 0.0),
+                        json.dumps(getattr(task, 'dependencies', [])),
+                        json.dumps(getattr(task, 'tags', [])),
+                    ),
+                )
+
+    async def get_tasks(self, status: str = None, priority: str = None) -> List[Dict]:
+        with get_pg_connection() as conn:
+            with conn.cursor() as cur:
+                query = "SELECT * FROM tasks WHERE 1=1"
+                params: list = []
+                if status:
+                    query += " AND status = %s"
+                    params.append(status)
+                if priority:
+                    query += " AND priority = %s"
+                    params.append(priority)
+                query += " ORDER BY created_at DESC"
+                cur.execute(query, params)
+                columns = [desc.name for desc in cur.description]
+                rows = cur.fetchall()
+                return [dict(zip(columns, row)) for row in rows]
+
+    async def update_task_status(self, task_id: str, status: str, completion_percentage: float = None):
+        with get_pg_connection() as conn:
+            with conn.cursor() as cur:
+                if completion_percentage is not None:
+                    cur.execute(
+                        "UPDATE tasks SET status = %s, completion_percentage = %s WHERE id = %s",
+                        (status, completion_percentage, task_id),
+                    )
+                else:
+                    cur.execute(
+                        "UPDATE tasks SET status = %s WHERE id = %s",
+                        (status, task_id),
+                    )
+
+    async def get_overdue_tasks(self) -> List[Dict]:
+        with get_pg_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT * FROM tasks
+                    WHERE due_date < NOW() AND status != 'Completed'
+                    ORDER BY due_date ASC
+                    """
+                )
+                columns = [desc.name for desc in cur.description]
+                rows = cur.fetchall()
+                return [dict(zip(columns, row)) for row in rows]

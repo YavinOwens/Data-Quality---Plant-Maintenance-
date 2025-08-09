@@ -8,7 +8,6 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text
 from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime
-import bcrypt
 
 Base = declarative_base()
 

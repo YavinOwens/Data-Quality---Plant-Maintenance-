@@ -14,7 +14,7 @@ services:
     environment:
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
     healthcheck:
-      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/health')"]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/ready || exit 1"]
       timeout: 10s
       interval: 30s
       retries: 3
@@ -34,6 +34,8 @@ services:
       context: ./validation-engine
       dockerfile: Dockerfile
     container_name: validation-engine
+    env_file:
+      - ./.env
     depends_on:
       postgres:
         condition: service_started
@@ -42,14 +44,15 @@ services:
         condition: service_started
         required: true
     environment:
-      - DB_HOST=${DB_HOST:-postgres}
-      - DB_NAME=${DB_NAME:-sap_data_quality}
-      - DB_USER=${DB_USER:-sap_user}
-      - DB_PASSWORD=${DB_PASSWORD:-your_db_password}
+      - DB_HOST=${DB_HOST}
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD_FILE=/run/secrets/db_password
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - RULES_PATH=/app/config/rules
+      - CORS_ORIGINS=${CORS_ORIGINS}
     healthcheck:
-      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8001/health')"]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8001/ready || exit 1"]
       timeout: 10s
       interval: 30s
       retries: 3
@@ -57,11 +60,17 @@ services:
       - sap-network
     restart: unless-stopped
     volumes:
+      - ./validation-engine:/app
       - ./data:/app/data
       - ./logs:/app/logs
       - ./config:/app/config
+      - ./secrets/db_password.txt:/run/secrets/db_password:ro
     ports:
       - "8001:8001"
+    secrets:
+      - source: db_password
+        target: /run/secrets/db_password
+        mode: 0444
 
   # Logging & Reporting Service
   logging-service:
@@ -70,33 +79,44 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - DB_HOST=${DB_HOST:-postgres}
-      - DB_NAME=${DB_NAME:-sap_data_quality}
-      - DB_USER=${DB_USER:-sap_user}
-      - DB_PASSWORD=${DB_PASSWORD:-your_db_password}
+      - DB_HOST=${DB_HOST}
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD_FILE=/run/secrets/db_password
+      - AI_DB_HOST=${AI_DB_HOST:-${DB_HOST}}
+      - AI_DB_NAME=${AI_DB_NAME:-${DB_NAME}}
+      - AI_DB_USER=${AI_DB_USER:-ai_agent_user}
+      - AI_DB_PASSWORD_FILE=/run/secrets/ai_db_password
       - FLASK_ENV=production
-      - SECRET_KEY=${SECRET_KEY:-your-secret-key-here-change-in-production}
-      - OLLAMA_URL=${OLLAMA_URL:-http://host.docker.internal:11434}
-      - OLLAMA_MODEL=${OLLAMA_MODEL:-phi3}
-      - RATE_LIMIT_ENABLED=true
-      - AUDIT_LOGGING_ENABLED=true
-      - SECURITY_MONITORING_ENABLED=true
-      - CACHE_ENABLED=true
+      - SECRET_KEY_FILE=/run/secrets/flask_secret_key
+      - CORS_ORIGINS=${CORS_ORIGINS}
+      - RATE_LIMIT_ENABLED=${RATE_LIMIT_ENABLED:-true}
+      - DEFAULT_RATE_LIMIT=${DEFAULT_RATE_LIMIT:-60/minute}
+      - AUDIT_LOGGING_ENABLED=${AUDIT_LOGGING_ENABLED:-true}
+      - SECURITY_MONITORING_ENABLED=${SECURITY_MONITORING_ENABLED:-true}
+      - CACHE_ENABLED=${CACHE_ENABLED:-true}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_DB=0
-      - LOAD_BALANCER_ENABLED=true
+      - LOAD_BALANCER_ENABLED=${LOAD_BALANCER_ENABLED:-true}
+      - SESSION_LIFETIME_HOURS=${SESSION_LIFETIME_HOURS:-8}
+      - SESSION_COOKIE_SAMESITE=${SESSION_COOKIE_SAMESITE:-Lax}
+      - AI_AGENTS_ENABLED=${AI_AGENTS_ENABLED:-true}
     volumes:
       - ./logging-service:/app
       - ./data:/app/data
     depends_on:
       - postgres
       - redis
+    secrets:
+      - db_password
+      - flask_secret_key
+      - ai_db_password
     networks:
       - sap-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health/lb"]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/ready || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -142,9 +162,9 @@ services:
     image: pgvector/pgvector:pg15
     container_name: sap-postgres
     environment:
-      - POSTGRES_DB=${DB_NAME:-sap_data_quality}
-      - POSTGRES_USER=${DB_USER:-sap_user}
-      - POSTGRES_PASSWORD=${DB_PASSWORD:-your_db_password}
+      - POSTGRES_DB=${DB_NAME}
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD_FILE=/run/secrets/db_password
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-sap_user} -d ${DB_NAME:-sap_data_quality}"]
       timeout: 10s
@@ -159,6 +179,8 @@ services:
       - ./pgvector-init:/docker-entrypoint-initdb.d
     ports:
       - "5432:5432"
+    secrets:
+      - db_password
 
   # pgAdmin for Database Administration
   pgadmin:
@@ -251,4 +273,14 @@ volumes:
   postgres_data:
   pgadmin_data:
   grafana_data:
-  prometheus_data: 
+  prometheus_data:
+
+secrets:
+  db_password:
+    file: ./secrets/db_password.txt
+  flask_secret_key:
+    file: ./secrets/flask_secret_key.txt
+  ai_db_password:
+    file: ./secrets/ai_db_password.txt
+
+# TODO: Verify secrets exist in ./secrets. For Kubernetes, replace with native secrets.

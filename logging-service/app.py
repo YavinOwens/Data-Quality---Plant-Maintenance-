@@ -9,20 +9,35 @@ import json
 import logging
 import sys
 import requests
+import uuid
 from datetime import datetime, timedelta
+def _to_json_safe(value):
+    """Recursively convert datetimes and non-serializable objects to JSON-safe forms."""
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {k: _to_json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_to_json_safe(v) for v in value]
+    try:
+        json.dumps(value)
+        return value
+    except Exception:
+        return str(value)
 from typing import Dict, List, Optional, Any
 from pathlib import Path
 
 import pandas as pd
 import numpy as np
 import requests
-from flask import Flask, request, jsonify, render_template, send_file, session, redirect, url_for, flash
+from flask import Flask, request, jsonify, render_template, send_file, session, redirect, url_for, flash, g
 from flask_cors import CORS
+from flask_wtf.csrf import CSRFProtect
 from flask_restful import Api, Resource
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user, UserMixin
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
+from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
 import structlog
 from sqlalchemy import create_engine, text, func
 import plotly.graph_objs as go
@@ -58,7 +73,7 @@ from vector_service import VectorService
 # Import AI agents
 from ai_agents import AIAgentManager, AgentConfig
 
-# Configure structured logging
+# Configure structured logging (standard fields across services)
 structlog.configure(
     processors=[
         structlog.stdlib.filter_by_level,
@@ -77,34 +92,59 @@ structlog.configure(
     cache_logger_on_first_use=True,
 )
 
-logger = structlog.get_logger()
+logger = structlog.get_logger(service="logging-service")
 
 # Also set up regular logging for debugging
 logging.basicConfig(level=logging.INFO, stream=sys.stderr)
 
 app = Flask(__name__)
-app.secret_key = os.getenv('SECRET_KEY', 'your-secret-key-change-in-production')
 
-# Configure Flask-Login
+# SECRET_KEY from Docker secret or env; do not hardcode
+def _read_secret(path_env: str, fallback_env: str) -> str:
+    path = os.getenv(path_env)
+    if path and os.path.exists(path):
+        with open(path, 'r', encoding='utf-8') as f:
+            return f.read().strip()
+    return os.getenv(fallback_env, '')
+
+_secret = _read_secret('SECRET_KEY_FILE', 'SECRET_KEY')
+if not _secret:
+    raise RuntimeError('SECRET_KEY not provided. Set SECRET_KEY or mount SECRET_KEY_FILE')
+app.secret_key = _secret
+
+# Secure session cookies
+_secure_cookie = str(os.getenv('SESSION_COOKIE_SECURE', 'false')).lower() in ('1', 'true', 'yes')
+app.config.update(
+    SESSION_COOKIE_SECURE=_secure_cookie,
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE=os.getenv('SESSION_COOKIE_SAMESITE', 'Lax'),
+    PERMANENT_SESSION_LIFETIME=timedelta(hours=int(os.getenv('SESSION_LIFETIME_HOURS', '8'))),
+)
+
+# Initialize Flask extensions
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
-login_manager.login_message = 'Please log in to access this page.'
 
-# Configure rate limiting
-limiter = Limiter(
-    app=app,
-    key_func=get_remote_address,
-    default_limits=["200 per day", "50 per hour"]
-)
+# CSRF disabled for MVP
+csrf = None
 
-CORS(app)
+# Configure rate limiting (defaults can be overridden via env)
+DEFAULT_RATE_LIMIT = os.getenv('DEFAULT_RATE_LIMIT', '60/minute')
+limiter = Limiter(app=app, key_func=get_remote_address, default_limits=[DEFAULT_RATE_LIMIT])
+
+# Restrictive CORS: enable only if CORS_ORIGINS set
+_cors_origins = [o.strip() for o in os.getenv('CORS_ORIGINS', '').split(',') if o.strip()]
+if _cors_origins:
+    CORS(app, resources={r"/api/*": {"origins": _cors_origins}})
 api = Api(app)
 
 # Prometheus metrics
 REQUEST_COUNT = Counter('logging_service_requests_total', 'Total requests', ['endpoint'])
 REQUEST_LATENCY = Histogram('logging_service_request_duration_seconds', 'Request latency')
 REPORT_GENERATION_COUNT = Counter('logging_service_reports_generated_total', 'Reports generated', ['report_type'])
+SERVICE_READY = Gauge('logging_service_ready', 'Readiness status (1=ready, 0=not_ready)')
+ERROR_COUNT = Counter('logging_service_errors_total', 'Unhandled exceptions')
 
 # Initialize authentication service
 auth_service = None
@@ -461,8 +501,24 @@ def before_request():
     
     # Initialize auth service if not already done
     if auth_service is None:
-        db_url = f"postgresql://{os.getenv('DB_USER', 'sap_user')}:{os.getenv('DB_PASSWORD', 'your_db_password')}@{os.getenv('DB_HOST', 'postgres')}:5432/{os.getenv('DB_NAME', 'sap_data_quality')}"
+        # Use app/reporting credentials (DB_*) for AuthService
+        db_host = os.getenv('DB_HOST', 'postgres')
+        db_name = os.getenv('DB_NAME', 'sap_data_quality')
+        db_user = os.getenv('DB_USER', 'sap_user')
+        db_pw = None
+        pw_path = os.getenv('DB_PASSWORD_FILE')
+        if pw_path and os.path.exists(pw_path):
+            try:
+                with open(pw_path, 'r', encoding='utf-8') as f:
+                    db_pw = f.read().strip()
+            except Exception:
+                db_pw = None
+        if not db_pw:
+            db_pw = os.getenv('DB_PASSWORD', '')
+        db_url = f"postgresql://{db_user}:{db_pw}@{db_host}:5432/{db_name}"
+        logger.info(f"Initializing AuthService with db_url: {db_url}")
         auth_service = AuthService(db_url)
+        logger.info(f"AuthService initialized, db_available: {auth_service.db_available}")
     
     # Skip security checks for static files and health checks
     if request.endpoint in ['static', 'health_check', 'metrics']:
@@ -507,20 +563,51 @@ def before_request():
             details=f'Accessed {request.endpoint}'
         )
 
+# Correlation ID middleware and basic request logging
+@app.before_request
+def _before_request():
+    g.correlation_id = request.headers.get('X-Correlation-Id', str(uuid.uuid4()))
+
+@app.after_request
+def _after_request(resp):
+    try:
+        resp.headers['X-Correlation-Id'] = g.correlation_id
+    except Exception:
+        pass
+    return resp
+
+@app.errorhandler(Exception)
+def _handle_exc(e):
+    logger.error('unhandled_exception', error=str(e), path=getattr(request, 'path', None),
+                 method=getattr(request, 'method', None), cid=getattr(g, 'correlation_id', None))
+    try:
+        ERROR_COUNT.inc()
+    except Exception:
+        pass
+    return jsonify({'error': 'Internal Server Error', 'correlation_id': getattr(g, 'correlation_id', None)}), 500
+
 # Authentication routes
 @app.route('/login', methods=['GET', 'POST'])
 @limiter.limit("5 per minute")
 def login():
     """Login page and authentication"""
+    logger.info(f"Login route called - method: {request.method}")
+    
     if request.method == 'POST':
+        logger.info("Processing POST login request")
         username = request.form.get('username')
         password = request.form.get('password')
         
+        logger.info(f"Login attempt for username: {username}")
+        
         if not username or not password:
+            logger.info("Missing username or password")
             return render_template('login.html', error='Please provide username and password')
         
+        logger.info("Checking rate limiting")
         # Check rate limiting for login attempts
         if not auth_service.check_rate_limit(request.remote_addr, 'login_attempt', limit=5, window=300):
+            logger.info("Rate limit exceeded")
             auth_service.log_security_event(
                 event_type='rate_limit_exceeded',
                 severity='high',
@@ -529,9 +616,16 @@ def login():
             )
             return render_template('login.html', error='Too many login attempts. Please try again later.')
         
-        user = auth_service.authenticate_user(username, password)
+        logger.info("Calling authenticate_user")
+        try:
+            user = auth_service.authenticate_user(username, password)
+            logger.info(f"Authentication result: {user is not None}")
+        except Exception as e:
+            logger.error(f"Authentication error: {str(e)}")
+            return render_template('login.html', error='Authentication service error')
         
         if user:
+            logger.info(f"Login successful for user: {username}")
             login_user(user)
             session.permanent = True
             app.permanent_session_lifetime = timedelta(hours=8)
@@ -546,10 +640,13 @@ def login():
                 details='User logged in successfully'
             )
             
+            logger.info("Redirecting to dashboard")
             return redirect(url_for('dashboard'))
         else:
+            logger.info(f"Login failed for user: {username}")
             return render_template('login.html', error='Invalid username or password')
     
+    logger.info("Rendering login page")
     return render_template('login.html')
 
 @app.route('/logout')
@@ -600,7 +697,17 @@ class DataQualityReporter:
     
     def __init__(self):
         """Initialize the reporter with database connection"""
-        self.db_url = f"postgresql://{os.getenv('DB_USER', 'sap_user')}:{os.getenv('DB_PASSWORD', 'your_db_password')}@{os.getenv('DB_HOST', 'postgres')}:5432/{os.getenv('DB_NAME', 'sap_data_quality')}"
+        # Read DB password from file if provided
+        db_pass_file = os.getenv('DB_PASSWORD_FILE')
+        db_password = None
+        if db_pass_file and os.path.exists(db_pass_file):
+            try:
+                with open(db_pass_file, 'r', encoding='utf-8') as f:
+                    db_password = f.read().strip()
+            except Exception:
+                db_password = None
+        db_password = db_password or os.getenv('DB_PASSWORD', 'your_db_password')
+        self.db_url = f"postgresql://{os.getenv('DB_USER', 'sap_user')}:{db_password}@{os.getenv('DB_HOST', 'postgres')}:5432/{os.getenv('DB_NAME', 'sap_data_quality')}"
         self.engine = create_engine(self.db_url)
         
         # Ollama configuration
@@ -760,42 +867,40 @@ class DataQualityReporter:
         """Get data quality trends over time"""
         try:
             since_date = datetime.utcnow() - timedelta(days=days)
-            
+            # Compute daily averages from DB success_rate to smooth the chart
             query = text("""
                 SELECT 
                     DATE(created_at) as date,
                     validation_type as dataset_name,
-                    CASE WHEN success_rate >= 0.95 THEN 'passed' ELSE 'failed' END as status,
-                    COUNT(*) as count
+                    AVG(success_rate) * 100.0 as avg_success_pct,
+                    COUNT(*) as validations
                 FROM validation_results 
                 WHERE created_at >= :since_date
-                GROUP BY DATE(created_at), validation_type, status
-                ORDER BY date, validation_type, status
+                GROUP BY DATE(created_at), validation_type
+                ORDER BY date, validation_type
             """)
-            
+
             with self.engine.connect() as conn:
                 result = conn.execute(query, {'since_date': since_date})
                 rows = result.fetchall()
-            
-            trends = {}
+
+            trends: Dict[str, Any] = {}
             for row in rows:
                 date_str = row.date.isoformat()
                 dataset = row.dataset_name
-                
+
                 if dataset not in trends:
                     trends[dataset] = {}
-                
-                if date_str not in trends[dataset]:
-                    trends[dataset][date_str] = {
-                        'passed': 0,
-                        'failed': 0,
-                        'error': 0,
-                        'total': 0
-                    }
-                
-                trends[dataset][date_str][row.status] = row.count
-                trends[dataset][date_str]['total'] += row.count
-            
+
+                avg_success = float(row.avg_success_pct) if row.avg_success_pct is not None else 0.0
+                avg_failed = max(0.0, 100.0 - avg_success)
+
+                trends[dataset][date_str] = {
+                    'avg_success_rate': avg_success,
+                    'avg_failed_rate': avg_failed,
+                    'total': int(row.validations)
+                }
+
             return trends
             
         except Exception as e:
@@ -1087,24 +1192,47 @@ Answer based on the data quality metrics above."""
 reporter = DataQualityReporter()
 
 # Database configuration for vector service
+# Prefer AI-specific env/secrets first, then fall back
+_db_pw = None
+for var in ("AI_DB_PASSWORD_FILE", "DB_PASSWORD_FILE"):
+    p = os.getenv(var)
+    if p and os.path.exists(p):
+        try:
+            with open(p, 'r', encoding='utf-8') as f:
+                _db_pw = f.read().strip()
+                break
+        except Exception:
+            pass
+if not _db_pw:
+    _db_pw = os.getenv('AI_DB_PASSWORD', os.getenv('DB_PASSWORD', 'your_db_password'))
+
 db_config = {
-    'host': os.getenv('DB_HOST', 'localhost'),
-    'database': os.getenv('DB_NAME', 'sap_data_quality'),
-    'user': os.getenv('DB_USER', 'sap_user'),
-    'password': os.getenv('DB_PASSWORD', 'your_db_password'),
+    'host': os.getenv('AI_DB_HOST', os.getenv('DB_HOST', 'postgres')),
+    'database': os.getenv('AI_DB_NAME', os.getenv('DB_NAME', 'sap_data_quality')),
+    'user': os.getenv('AI_DB_USER', os.getenv('DB_USER', 'sap_user')),
+    'password': _db_pw,
     'port': 5432
 }
 
 # Initialize vector service
 vector_service = VectorService(db_config)
 
-# Initialize AI Agent Manager
+"""AI Agents feature flag
+# AI agents can be disabled via environment variable to harden production by default.
+# Set AI_AGENTS_ENABLED=true to enable.
+"""
 ai_agent_manager = None
 
 def init_ai_agents():
-    """Initialize AI agents"""
+    """Initialize AI agents if enabled by configuration"""
     global ai_agent_manager
     try:
+        enabled = str(os.getenv('AI_AGENTS_ENABLED', 'false')).lower() in ('1', 'true', 'yes')
+        if not enabled:
+            app.agent_manager = None
+            logger.info("AI agents disabled by configuration")
+            return
+
         config = AgentConfig(
             validation_rule_enabled=True,
             ab_testing_enabled=True,
@@ -1114,6 +1242,7 @@ def init_ai_agents():
             max_concurrent_agents=4
         )
         ai_agent_manager = AIAgentManager(config)
+        app.agent_manager = ai_agent_manager
         logger.info("AI agents initialized successfully")
     except Exception as e:
         logger.error(f"Failed to initialize AI agents: {e}")
@@ -1147,6 +1276,181 @@ class ValidationSummaryResource(Resource):
                 'status': 'error',
                 'message': str(e)
             }, 500
+
+# Risk Register API
+@app.route('/api/risks', methods=['GET', 'POST'])
+@login_required
+@limiter.limit("100 per hour")
+def risks_collection():
+    try:
+        if request.method == 'POST':
+            data = request.get_json() or {}
+            insert_sql = text(
+                """
+                INSERT INTO risk_register
+                (title, category, likelihood, impact, status, owner, due_date, priority, description, causes, consequences, mitigation)
+                VALUES (:title, :category, :likelihood, :impact, :status, :owner, :due_date, :priority, :description, :causes, :consequences, :mitigation)
+                RETURNING id
+                """
+            )
+            params = {
+                'title': data.get('title'),
+                'category': data.get('category'),
+                'likelihood': data.get('likelihood'),
+                'impact': data.get('impact'),
+                'status': data.get('status'),
+                'owner': data.get('owner'),
+                'due_date': data.get('dueDate'),
+                'priority': data.get('priority'),
+                'description': data.get('description'),
+                'causes': data.get('causes'),
+                'consequences': data.get('consequences'),
+                'mitigation': data.get('mitigation'),
+            }
+            with reporter.engine.begin() as conn:
+                new_id = conn.execute(insert_sql, params).scalar()
+            return jsonify({'id': new_id}), 201
+
+        # GET with optional filters
+        severity = request.args.get('severity')
+        status = request.args.get('status')
+        category = request.args.get('category')
+        search = request.args.get('search')
+
+        base_sql = "SELECT * FROM risk_register"
+        conditions = []
+        bind = {}
+        if status:
+            conditions.append("status = :status")
+            bind['status'] = status
+        if category:
+            conditions.append("category = :category")
+            bind['category'] = category
+        if search:
+            conditions.append("(title ILIKE :q OR description ILIKE :q OR mitigation ILIKE :q)")
+            bind['q'] = f"%{search}%"
+        if severity in ('high', 'medium', 'low'):
+            # Compute severity from likelihood*impact: 9 high, 6-8 medium, 1-5 low
+            sev_clause = {
+                'high': "(likelihood * impact) >= 9",
+                'medium': "(likelihood * impact) BETWEEN 6 AND 8",
+                'low': "(likelihood * impact) <= 5",
+            }[severity]
+            conditions.append(sev_clause)
+        if conditions:
+            base_sql += " WHERE " + " AND ".join(conditions)
+        base_sql += " ORDER BY created_at DESC"
+
+        with reporter.engine.connect() as conn:
+            rows = conn.execute(text(base_sql), bind).mappings().all()
+
+        def to_frontend(row):
+            score = (row['likelihood'] or 0) * (row['impact'] or 0)
+            # derive severity text for convenience if needed by UI
+            return {
+                'id': row['id'],
+                'title': row['title'],
+                'description': row['description'],
+                'category': row['category'],
+                'likelihood': row['likelihood'],
+                'impact': row['impact'],
+                'riskScore': score,
+                'status': row['status'],
+                'owner': row['owner'],
+                'dueDate': row['due_date'].isoformat() if row['due_date'] else None,
+                'priority': row['priority'],
+                'causes': row['causes'],
+                'consequences': row['consequences'],
+                'mitigation': row['mitigation'],
+                'createdAt': row['created_at'].isoformat() if row['created_at'] else None,
+                'updatedAt': row['updated_at'].isoformat() if row['updated_at'] else None,
+            }
+
+        return jsonify([to_frontend(r) for r in rows])
+    
+    except Exception as e:
+        logger.error(f"Risks API error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/risks/<int:risk_id>', methods=['GET', 'PUT', 'DELETE'])
+@login_required
+@limiter.limit("100 per hour")
+def risks_resource(risk_id: int):
+    try:
+        if request.method == 'GET':
+            with reporter.engine.connect() as conn:
+                row = conn.execute(text("SELECT * FROM risk_register WHERE id = :id"), {'id': risk_id}).mappings().first()
+            if not row:
+                return jsonify({'error': 'Not found'}), 404
+            score = (row['likelihood'] or 0) * (row['impact'] or 0)
+            return jsonify({
+                'id': row['id'],
+                'title': row['title'],
+                'description': row['description'],
+                'category': row['category'],
+                'likelihood': row['likelihood'],
+                'impact': row['impact'],
+                'riskScore': score,
+                'status': row['status'],
+                'owner': row['owner'],
+                'dueDate': row['due_date'].isoformat() if row['due_date'] else None,
+                'priority': row['priority'],
+                'causes': row['causes'],
+                'consequences': row['consequences'],
+                'mitigation': row['mitigation'],
+                'createdAt': row['created_at'].isoformat() if row['created_at'] else None,
+                'updatedAt': row['updated_at'].isoformat() if row['updated_at'] else None,
+            })
+
+        if request.method == 'PUT':
+            data = request.get_json() or {}
+            update_sql = text(
+                """
+                UPDATE risk_register
+                SET title = :title,
+                    category = :category,
+                    likelihood = :likelihood,
+                    impact = :impact,
+                    status = :status,
+                    owner = :owner,
+                    due_date = :due_date,
+                    priority = :priority,
+                    description = :description,
+                    causes = :causes,
+                    consequences = :consequences,
+                    mitigation = :mitigation,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = :id
+                """
+            )
+            params = {
+                'id': risk_id,
+                'title': data.get('title'),
+                'category': data.get('category'),
+                'likelihood': data.get('likelihood'),
+                'impact': data.get('impact'),
+                'status': data.get('status'),
+                'owner': data.get('owner'),
+                'due_date': data.get('dueDate'),
+                'priority': data.get('priority'),
+                'description': data.get('description'),
+                'causes': data.get('causes'),
+                'consequences': data.get('consequences'),
+                'mitigation': data.get('mitigation'),
+            }
+            with reporter.engine.begin() as conn:
+                conn.execute(update_sql, params)
+            return jsonify({'id': risk_id})
+
+        # DELETE
+        with reporter.engine.begin() as conn:
+            conn.execute(text("DELETE FROM risk_register WHERE id = :id"), {'id': risk_id})
+        return jsonify({'deleted': True})
+
+    except Exception as e:
+        logger.error(f"Risks API error: {e}")
+        return jsonify({'error': str(e)}), 500
 
 class RecentIssuesResource(Resource):
     """API endpoint for recent issues"""
@@ -1209,6 +1513,153 @@ class QualityReportResource(Resource):
 api.add_resource(ValidationSummaryResource, '/api/validation-summary')
 api.add_resource(RecentIssuesResource, '/api/recent-issues')
 api.add_resource(QualityReportResource, '/api/quality-report')
+
+# Validation workflow endpoints
+@app.route('/api/validations/run', methods=['POST'])
+@login_required
+@limiter.limit("20 per hour")
+def run_validations():
+    """Trigger validations by extracting from mock-sap and calling validation-engine."""
+    try:
+        # Extract from mock-sap (port 8000)
+        equip = requests.get('http://mock-sap:8000/extract/equipment', timeout=15).json().get('data', [])
+        fl = requests.get('http://mock-sap:8000/extract/functional-locations', timeout=15).json().get('data', [])
+        mo = requests.get('http://mock-sap:8000/extract/maintenance-orders', timeout=15).json().get('data', [])
+
+        # Validate via validation-engine (port 8001)
+        eq_res = requests.post('http://validation-engine:8001/validate/equipment', json={'data': equip}, timeout=30).json()
+        mo_res = requests.post('http://validation-engine:8001/validate/maintenance-orders', json={'data': mo}, timeout=30).json()
+        cr_res = requests.post('http://validation-engine:8001/validate/cross-reference', json={'equipment': equip, 'functional_locations': fl, 'maintenance_orders': mo}, timeout=30).json()
+
+        return jsonify({'success': True, 'results': {'equipment': eq_res, 'maintenance_orders': mo_res, 'cross_reference': cr_res}, 'timestamp': datetime.utcnow().isoformat()})
+    except Exception as e:
+        logger.error(f"Run validations failed: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+# Rules API (reads from SQLite rules.db created by AI agents)
+@app.route('/api/rules', methods=['GET', 'POST'])
+@login_required
+@limiter.limit("60 per hour")
+def list_rules():
+    import sqlite3
+    if request.method == 'POST':
+        try:
+            payload = request.get_json() or {}
+            required = ['name', 'sql_condition']
+            missing = [k for k in required if not payload.get(k)]
+            if missing:
+                return jsonify({'error': f"missing fields: {', '.join(missing)}"}), 400
+            db_path = "/app/data/rules.db"
+            conn = sqlite3.connect(db_path)
+            cur = conn.cursor()
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS validation_rules (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    description TEXT,
+                    sql_condition TEXT NOT NULL,
+                    severity TEXT,
+                    category TEXT,
+                    created_by TEXT,
+                    created_at TEXT,
+                    is_active BOOLEAN,
+                    performance_metrics TEXT
+                )
+                """
+            )
+            import uuid, datetime, json as pyjson
+            rule_id = payload.get('id') or str(uuid.uuid4())
+            now = datetime.datetime.utcnow().isoformat()
+            cur.execute(
+                """
+                INSERT OR REPLACE INTO validation_rules
+                (id, name, description, sql_condition, severity, category, created_by, created_at, is_active, performance_metrics)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    rule_id,
+                    payload.get('name'),
+                    payload.get('description'),
+                    payload.get('sql_condition'),
+                    payload.get('severity'),
+                    payload.get('category'),
+                    payload.get('created_by') or current_user.username,
+                    now,
+                    1 if payload.get('is_active', True) else 0,
+                    pyjson.dumps(payload.get('performance_metrics') or {})
+                )
+            )
+            conn.commit()
+            conn.close()
+            logger.info(f"Rule created: {rule_id}")
+            return jsonify({'id': rule_id}), 201
+        except Exception as e:
+            try:
+                conn.close()
+            except Exception:
+                pass
+            logger.error(f"Create rule failed: {e}")
+            return jsonify({'error': str(e)}), 500
+    rules = []
+    try:
+        db_path = "/app/data/rules.db"
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("SELECT id, name, description, sql_condition, severity, category, created_by, created_at, is_active, performance_metrics FROM validation_rules ORDER BY created_at DESC")
+        for row in cur.fetchall():
+            rules.append({
+                'id': row['id'],
+                'name': row['name'],
+                'description': row['description'],
+                'sql_condition': row['sql_condition'],
+                'severity': row['severity'],
+                'category': row['category'],
+                'created_by': row['created_by'],
+                'created_at': row['created_at'],
+                'is_active': bool(row['is_active']),
+                'performance_metrics': row['performance_metrics']
+            })
+        conn.close()
+        return jsonify(rules)
+    except Exception as e:
+        try:
+            conn.close()
+        except Exception:
+            pass
+        return jsonify({'error': str(e)}), 500
+
+# Optional: promote a rule into Postgres (store metadata in configuration as example)
+@app.route('/api/rules/<rule_id>/promote', methods=['POST'])
+@login_required
+@require_role('admin')
+@limiter.limit("20 per hour")
+def promote_rule(rule_id):
+    import sqlite3
+    try:
+        # Fetch from SQLite
+        conn = sqlite3.connect('/app/data/rules.db')
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("SELECT id, name, sql_condition, severity, category FROM validation_rules WHERE id = ?", (rule_id,))
+        row = cur.fetchone()
+        conn.close()
+        if not row:
+            return jsonify({'error': 'Rule not found'}), 404
+        # Store promotion marker in Postgres configuration (placeholder for now)
+        with reporter.engine.begin() as pg:
+            pg.execute(text("""
+                INSERT INTO configuration (config_key, config_value, config_type, description)
+                VALUES (:k, :v, 'string', 'Promoted validation rule')
+                ON CONFLICT (config_key) DO UPDATE SET config_value = EXCLUDED.config_value, updated_at = CURRENT_TIMESTAMP
+            """), {
+                'k': f"promoted_rule_{row['id']}",
+                'v': f"{row['name']}|{row['sql_condition']}|{row['severity']}|{row['category']}"
+            })
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 # Vector service endpoints
 @app.route('/api/vector/search', methods=['POST'])
@@ -3571,6 +4022,31 @@ def health_check():
         'service': 'logging-service'
     })
 
+@app.route('/ready', methods=['GET'])
+def readiness_check():
+    """Readiness probe: verify DB and cache dependencies.
+    # TODO: Verify DB/Redis availability in target environments.
+    """
+    try:
+        if auth_service:
+            test_query = auth_service.execute_query("SELECT 1")
+            if not test_query:
+                return jsonify({"status": "not_ready", "reason": "db"}), 503
+        if redis_client:
+            redis_client.ping()
+        try:
+            SERVICE_READY.set(1)
+        except Exception:
+            pass
+        return jsonify({"status": "ready", "service": "logging-service", "timestamp": datetime.utcnow().isoformat()})
+    except Exception as e:
+        logger.error(f"readiness_check_failed: {str(e)}")
+        try:
+            SERVICE_READY.set(0)
+        except Exception:
+            pass
+        return jsonify({"status": "not_ready", "service": "logging-service", "timestamp": datetime.utcnow().isoformat()}), 503
+
 @app.route('/health/lb')
 def load_balancer_health_check():
     """Load balancer health check endpoint"""
@@ -3640,18 +4116,21 @@ def export_csv():
         
         query = text("""
             SELECT 
-                dataset_name,
-                rule_name,
-                status,
-                created_at,
-                results
+                validation_type,
+                validation_name,
+                success_rate,
+                total_records,
+                passed_records,
+                failed_records,
+                error_details AS results,
+                created_at
             FROM validation_results 
             WHERE created_at >= :since_date
         """)
         
         params = {'since_date': since_date}
         if dataset_name:
-            query = text(str(query) + " AND dataset_name = :dataset_name")
+            query = text(str(query) + " AND validation_type = :dataset_name")
             params['dataset_name'] = dataset_name
         
         with reporter.engine.connect() as conn:
@@ -3661,37 +4140,36 @@ def export_csv():
         # Convert to DataFrame
         data = []
         for row in rows:
-            try:
-                results_data = json.loads(row.results) if row.results else {}
-                data.append({
-                    'dataset_name': row.dataset_name,
-                    'rule_name': row.rule_name,
-                    'status': row.status,
-                    'created_at': row.created_at.isoformat(),
-                    'issues_count': len(results_data.get('issues', [])),
-                    'metrics': json.dumps(results_data.get('metrics', {}))
-                })
-            except Exception as e:
-                logger.error(f"Failed to parse row: {str(e)}")
-        
+            results_data = json.loads(row.results) if row.results else {}
+            data.append({
+                'validation_type': row.validation_type,
+                'validation_name': row.validation_name,
+                'success_rate': float(row.success_rate) if row.success_rate is not None else None,
+                'total_records': row.total_records,
+                'passed_records': row.passed_records,
+                'failed_records': row.failed_records,
+                'created_at': row.created_at.isoformat(),
+                'issues_count': len(results_data.get('issues', []))
+            })
+
         df = pd.DataFrame(data)
-        
+
         # Create CSV
         output = BytesIO()
         df.to_csv(output, index=False)
         output.seek(0)
-        
+
         filename = f"validation_results_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv"
-        
+
         REPORT_GENERATION_COUNT.labels(report_type='csv_export').inc()
-        
+
         return send_file(
             BytesIO(output.getvalue()),
             mimetype='text/csv',
             as_attachment=True,
             download_name=filename
         )
-        
+
     except Exception as e:
         logger.error(f"CSV export failed: {str(e)}")
         return jsonify({
@@ -3715,18 +4193,21 @@ def export_excel():
         
         query = text("""
             SELECT 
-                dataset_name,
-                rule_name,
-                status,
-                created_at,
-                results
+                validation_type,
+                validation_name,
+                success_rate,
+                total_records,
+                passed_records,
+                failed_records,
+                error_details AS results,
+                created_at
             FROM validation_results 
             WHERE created_at >= :since_date
         """)
         
         params = {'since_date': since_date}
         if dataset_name:
-            query = text(str(query) + " AND dataset_name = :dataset_name")
+            query = text(str(query) + " AND validation_type = :dataset_name")
             params['dataset_name'] = dataset_name
         
         with reporter.engine.connect() as conn:
@@ -3736,18 +4217,17 @@ def export_excel():
         # Convert to DataFrame
         data = []
         for row in rows:
-            try:
-                results_data = json.loads(row.results) if row.results else {}
-                data.append({
-                    'dataset_name': row.dataset_name,
-                    'rule_name': row.rule_name,
-                    'status': row.status,
-                    'created_at': row.created_at.isoformat(),
-                    'issues_count': len(results_data.get('issues', [])),
-                    'metrics': json.dumps(results_data.get('metrics', {}))
-                })
-            except Exception as e:
-                logger.error(f"Failed to parse row: {str(e)}")
+            results_data = json.loads(row.results) if row.results else {}
+            data.append({
+                'validation_type': row.validation_type,
+                'validation_name': row.validation_name,
+                'success_rate': float(row.success_rate) if row.success_rate is not None else None,
+                'total_records': row.total_records,
+                'passed_records': row.passed_records,
+                'failed_records': row.failed_records,
+                'created_at': row.created_at.isoformat(),
+                'issues_count': len(results_data.get('issues', []))
+            })
         
         df = pd.DataFrame(data)
         
@@ -3758,15 +4238,16 @@ def export_excel():
             
             # Add summary sheet
             summary_data = []
-            for dataset in df['dataset_name'].unique():
-                dataset_df = df[df['dataset_name'] == dataset]
+            for dataset in df['validation_type'].unique():
+                dataset_df = df[df['validation_type'] == dataset]
                 total = len(dataset_df)
-                passed = len(dataset_df[dataset_df['status'] == 'passed'])
-                failed = len(dataset_df[dataset_df['status'] == 'failed'])
+                # Consider pass if success_rate >= 95%
+                passed = len(dataset_df[dataset_df['success_rate'].fillna(0) >= 0.95])
+                failed = total - passed
                 success_rate = (passed / total * 100) if total > 0 else 0
                 
                 summary_data.append({
-                    'dataset_name': dataset,
+                    'validation_type': dataset,
                     'total_validations': total,
                     'passed': passed,
                     'failed': failed,
@@ -5079,6 +5560,10 @@ def init_ai_agents():
             max_concurrent_agents=4
         )
         ai_agent_manager = AIAgentManager(config)
+        
+        # Also assign to app object for API access
+        app.agent_manager = ai_agent_manager
+        
         logger.info("AI agents initialized successfully")
     except Exception as e:
         logger.error(f"Failed to initialize AI agents: {e}")
@@ -5142,97 +5627,79 @@ def execute_workflow(workflow_name):
 @login_required
 @limiter.limit("10 per minute")
 def get_scripts():
-    """Get all generated scripts"""
+    """Get all generated scripts from SQLite (tests.db reused or a new scripts table)"""
     try:
-        # Mock script data - in real implementation, this would query the database
-        scripts = [
-            {
-                'id': 'script_001',
-                'name': 'Equipment Update Script',
-                'description': 'Script for updating equipment data',
-                'status': 'Draft',
-                'created_at': datetime.utcnow().isoformat(),
-                'approved_at': None
-            },
-            {
-                'id': 'script_002',
-                'name': 'Functional Location Update Script',
-                'description': 'Script for updating functional location data',
-                'status': 'Approved',
-                'created_at': datetime.utcnow().isoformat(),
-                'approved_at': datetime.utcnow().isoformat()
-            }
-        ]
-        
-        return jsonify({
-            'success': True,
-            'data': scripts,
-            'timestamp': datetime.utcnow().isoformat()
-        })
+        import sqlite3
+        items = []
+        with sqlite3.connect('/app/data/tests.db') as conn:
+            conn.row_factory = sqlite3.Row
+            cur = conn.cursor()
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS scripts (
+                    id TEXT PRIMARY KEY,
+                    name TEXT,
+                    description TEXT,
+                    status TEXT,
+                    created_at TEXT,
+                    approved_at TEXT
+                )
+            """)
+            cur.execute("SELECT id, name, description, status, created_at, approved_at FROM scripts ORDER BY created_at DESC")
+            for row in cur.fetchall():
+                items.append(dict(row))
+        return jsonify({'success': True, 'data': items, 'timestamp': datetime.utcnow().isoformat()})
     except Exception as e:
-        return jsonify({
-            'success': False,
-            'message': str(e),
-            'timestamp': datetime.utcnow().isoformat()
-        }), 500
+        logger.error(f"AI scripts fetch failed: {e}")
+        return jsonify({'success': False, 'message': str(e), 'timestamp': datetime.utcnow().isoformat()}), 500
 
 @app.route('/api/ai-agents/scripts/<script_id>/approve', methods=['POST'])
 @login_required
 @limiter.limit("5 per minute")
 def approve_script(script_id):
-    """Approve a generated script"""
+    """Approve a generated script (SQLite)"""
     try:
-        # Mock approval - in real implementation, this would update the database
-        return jsonify({
-            'success': True,
-            'message': f'Script {script_id} approved successfully',
-            'timestamp': datetime.utcnow().isoformat()
-        })
+        import sqlite3
+        with sqlite3.connect('/app/data/tests.db') as conn:
+            cur = conn.cursor()
+            cur.execute("UPDATE scripts SET status = 'Approved', approved_at = ? WHERE id = ?", (datetime.utcnow().isoformat(), script_id))
+            conn.commit()
+        return jsonify({'success': True, 'message': f'Script {script_id} approved successfully', 'timestamp': datetime.utcnow().isoformat()})
     except Exception as e:
-        return jsonify({
-            'success': False,
-            'message': str(e),
-            'timestamp': datetime.utcnow().isoformat()
-        }), 500
+        logger.error(f"Approve script failed: {e}")
+        return jsonify({'success': False, 'message': str(e), 'timestamp': datetime.utcnow().isoformat()}), 500
 
 @app.route('/api/ai-agents/rules', methods=['GET'])
 @login_required
-@limiter.limit("10 per minute")
+@limiter.limit("30 per minute")
 def get_validation_rules():
-    """Get all validation rules created by AI agents"""
+    """Get all validation rules created by AI agents from SQLite rules.db"""
     try:
-        # Mock rule data - in real implementation, this would query the database
-        rules = [
-            {
-                'id': 'rule_001',
-                'name': 'Equipment Name Completeness',
-                'description': 'Ensures equipment names are not null',
-                'sql_condition': 'equipment_name IS NOT NULL',
-                'severity': 'High',
-                'category': 'DataQuality',
-                'created_by': 'AI Agent',
-                'created_at': datetime.utcnow().isoformat(),
-                'is_active': True
-            },
-            {
-                'id': 'rule_002',
-                'name': 'Maintenance Date Validation',
-                'description': 'Validates maintenance dates are not null and not empty',
-                'sql_condition': 'maintenance_date IS NOT NULL AND maintenance_date != \'\'',
-                'severity': 'Critical',
-                'category': 'DataQuality',
-                'created_by': 'AI Agent',
-                'created_at': datetime.utcnow().isoformat(),
-                'is_active': True
-            }
-        ]
-        
+        import sqlite3
+        rules = []
+        with sqlite3.connect('/app/data/rules.db') as conn:
+            conn.row_factory = sqlite3.Row
+            cur = conn.cursor()
+            cur.execute("SELECT id, name, description, sql_condition, severity, category, created_by, created_at, is_active FROM validation_rules ORDER BY created_at DESC")
+            for row in cur.fetchall():
+                rules.append({
+                    'id': row['id'],
+                    'name': row['name'],
+                    'description': row['description'],
+                    'sql_condition': row['sql_condition'],
+                    'severity': row['severity'],
+                    'category': row['category'],
+                    'created_by': row['created_by'],
+                    'created_at': row['created_at'],
+                    'is_active': bool(row['is_active'])
+                })
+        logger.info(f"AI rules fetched: {len(rules)}")
         return jsonify({
             'success': True,
             'data': rules,
             'timestamp': datetime.utcnow().isoformat()
         })
     except Exception as e:
+        logger.error(f"AI rules fetch failed: {e}")
         return jsonify({
             'success': False,
             'message': str(e),
@@ -5243,29 +5710,93 @@ def get_validation_rules():
 @login_required
 @limiter.limit("10 per minute")
 def get_ab_tests():
-    """Get all A/B tests"""
+    """Get all A/B tests from SQLite tests.db"""
     try:
-        # Mock test data - in real implementation, this would query the database
-        tests = [
-            {
-                'id': 'test_001',
-                'name': 'A/B Test: Equipment Name Completeness vs Enhanced Validation',
-                'status': 'Running',
-                'start_date': datetime.utcnow().isoformat(),
-                'end_date': None,
-                'metrics': {
-                    'rule_a_performance': 0.85,
-                    'rule_b_performance': 0.92,
-                    'statistical_significance': 0.87,
-                    'sample_size': 1000,
-                    'confidence_interval': (0.82, 0.88)
-                }
-            }
-        ]
+        import sqlite3, json as pyjson
+        tests = []
+        with sqlite3.connect('/app/data/tests.db') as conn:
+            conn.row_factory = sqlite3.Row
+            cur = conn.cursor()
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS ab_tests (
+                    id TEXT PRIMARY KEY,
+                    name TEXT,
+                    rule_a TEXT,
+                    rule_b TEXT,
+                    start_date TEXT,
+                    end_date TEXT,
+                    status TEXT,
+                    metrics TEXT
+                )
+            """)
+            cur.execute("SELECT id, name, rule_a, rule_b, start_date, end_date, status, metrics FROM ab_tests ORDER BY start_date DESC")
+            for row in cur.fetchall():
+                item = dict(row)
+                # parse metrics/json fields if present
+                if item.get('metrics'):
+                    try:
+                        item['metrics'] = pyjson.loads(item['metrics'])
+                    except Exception:
+                        pass
+                if item.get('rule_a'):
+                    try:
+                        item['rule_a'] = pyjson.loads(item['rule_a'])
+                    except Exception:
+                        pass
+                if item.get('rule_b'):
+                    try:
+                        item['rule_b'] = pyjson.loads(item['rule_b'])
+                    except Exception:
+                        pass
+                tests.append(item)
+        return jsonify({'success': True, 'data': tests, 'timestamp': datetime.utcnow().isoformat()})
+    except Exception as e:
+        logger.error(f"A/B tests fetch failed: {e}")
+        return jsonify({'success': False, 'message': str(e), 'timestamp': datetime.utcnow().isoformat()}), 500
+
+@app.route('/api/ai-agents/tasks', methods=['GET'])
+@login_required
+@limiter.limit("10 per minute")
+def get_ai_tasks():
+    """Get all tasks created by AI agents"""
+    try:
+        from ai_agents import TaskRepository
+        import asyncio
+        repo = TaskRepository()
+        tasks = asyncio.run(repo.get_tasks())
+        return jsonify({'success': True, 'data': tasks, 'timestamp': datetime.utcnow().isoformat()})
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': str(e),
+            'timestamp': datetime.utcnow().isoformat()
+        }), 500
+
+@app.route('/api/ai-agents/task-execution', methods=['POST'])
+@login_required
+@limiter.limit("10 per minute")
+def execute_task_management():
+    """Execute task management operations"""
+    try:
+        import asyncio
+        data = request.get_json() or {}
+        operation = data.get('operation', 'monitor')
+        
+        # Get the task execution agent
+        agent_manager = getattr(app, 'agent_manager', None)
+        if not agent_manager:
+            return jsonify({
+                'success': False,
+                'message': 'Agent manager not initialized',
+                'timestamp': datetime.utcnow().isoformat()
+            }), 500
+        
+        # Execute the task management operation
+        result = asyncio.run(agent_manager.agents['task_execution'].execute(data))
         
         return jsonify({
             'success': True,
-            'data': tests,
+            'data': result,
             'timestamp': datetime.utcnow().isoformat()
         })
     except Exception as e:
@@ -5275,43 +5806,44 @@ def get_ab_tests():
             'timestamp': datetime.utcnow().isoformat()
         }), 500
 
-@app.route('/api/ai-agents/tasks', methods=['GET'])
+@app.route('/api/ai-agents/task-execution/<task_id>', methods=['PUT'])
 @login_required
-@limiter.limit("10 per minute")
-def get_ai_tasks():
-    """Get all tasks created by AI agents"""
+@limiter.limit("20 per minute")
+def update_task_status(task_id):
+    """Update task status and completion"""
     try:
-        # Mock task data - in real implementation, this would query the database
-        tasks = [
-            {
-                'id': 'task_001',
-                'title': 'Complete missing data for EQ001',
-                'description': 'Missing fields: manufacturer, model',
-                'priority': 'High',
-                'status': 'Open',
-                'assigned_to': None,
-                'due_date': (datetime.utcnow() + timedelta(days=7)).isoformat(),
-                'created_at': datetime.utcnow().isoformat(),
-                'entity_type': 'Equipment',
-                'entity_id': 'EQ001'
-            },
-            {
-                'id': 'task_002',
-                'title': 'Complete missing data for FL001',
-                'description': 'Missing fields: location_code',
-                'priority': 'Medium',
-                'status': 'Open',
-                'assigned_to': None,
-                'due_date': (datetime.utcnow() + timedelta(days=7)).isoformat(),
-                'created_at': datetime.utcnow().isoformat(),
-                'entity_type': 'FunctionalLocation',
-                'entity_id': 'FL001'
-            }
-        ]
+        import asyncio
+        data = request.get_json() or {}
+        status = data.get('status')
+        completion_percentage = data.get('completion_percentage')
+        
+        if not status:
+            return jsonify({
+                'success': False,
+                'message': 'Status is required',
+                'timestamp': datetime.utcnow().isoformat()
+            }), 400
+        
+        # Get the task execution agent
+        agent_manager = getattr(app, 'agent_manager', None)
+        if not agent_manager:
+            return jsonify({
+                'success': False,
+                'message': 'Agent manager not initialized',
+                'timestamp': datetime.utcnow().isoformat()
+            }), 500
+        
+        # Update task status
+        result = asyncio.run(agent_manager.agents['task_execution'].execute({
+            'operation': 'update_status',
+            'task_id': task_id,
+            'status': status,
+            'completion_percentage': completion_percentage
+        }))
         
         return jsonify({
             'success': True,
-            'data': tasks,
+            'data': result,
             'timestamp': datetime.utcnow().isoformat()
         })
     except Exception as e:
@@ -5320,6 +5852,66 @@ def get_ai_tasks():
             'message': str(e),
             'timestamp': datetime.utcnow().isoformat()
         }), 500
+
+# Tasks API (SQLite-backed)
+@app.route('/api/tasks', methods=['GET', 'POST'])
+@login_required
+@limiter.limit("60 per hour")
+def tasks_collection():
+    try:
+        from ai_agents import TaskRepository, Task
+        import asyncio
+        repo = TaskRepository()
+        if request.method == 'GET':
+            status = request.args.get('status')
+            priority = request.args.get('priority')
+            tasks = asyncio.run(repo.get_tasks(status=status, priority=priority))
+            # Frontend expects a bare array
+            return jsonify(tasks)
+        else:
+            payload = request.get_json() or {}
+            title = payload.get('title')
+            if not title:
+                return jsonify({'error': 'title is required'}), 400
+            description = payload.get('description', '')
+            priority = payload.get('priority', 'Medium')
+            task = Task(title=title, description=description, priority=priority)
+            task.entity_type = payload.get('entity_type', task.entity_type)
+            task.entity_id = payload.get('entity_id', task.entity_id)
+            asyncio.run(repo.save_task(task))
+            return jsonify({'id': task.id, 'title': task.title}), 201
+    except Exception as e:
+        logger.error(f"Tasks collection error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/tasks/<task_id>', methods=['PUT', 'DELETE', 'GET'])
+@login_required
+@limiter.limit("60 per hour")
+def task_item(task_id):
+    try:
+        from ai_agents import TaskRepository
+        import asyncio, sqlite3
+        repo = TaskRepository()
+        if request.method == 'GET':
+            tasks = asyncio.run(repo.get_tasks())
+            task = next((t for t in tasks if t['id'] == task_id), None)
+            if not task:
+                return jsonify({'error': 'not found'}), 404
+            return jsonify(task)
+        elif request.method == 'PUT':
+            data = request.get_json() or {}
+            status = data.get('status')
+            completion = data.get('completion_percentage')
+            asyncio.run(repo.update_task_status(task_id, status or 'Open', completion))
+            return jsonify({'id': task_id, 'status': status, 'completion_percentage': completion})
+        else:  # DELETE
+            # Direct delete since repository has no delete method yet
+            with sqlite3.connect('/app/data/tasks.db') as conn:
+                conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+            return ('', 204)
+    except Exception as e:
+        logger.error(f"Task item error: {e}")
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080, debug=False) 

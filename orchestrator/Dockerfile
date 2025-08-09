@@ -6,10 +6,11 @@ ENV AIRFLOW_HOME=/opt/airflow
 ENV AIRFLOW__CORE__EXECUTOR=LocalExecutor
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     g++ \
     libpq-dev \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
@@ -31,6 +32,9 @@ RUN useradd -ms /bin/bash -d /opt/airflow airflow && \
 
 # Switch to airflow user
 USER airflow
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
 
 # Expose port
 EXPOSE 8080
