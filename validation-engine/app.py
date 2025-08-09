@@ -8,13 +8,14 @@ import json
 import os
 import time
 from datetime import datetime
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, g
 from flask_cors import CORS
+import uuid
 import pandas as pd
 import numpy as np
 import structlog
 import prometheus_client
-from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
+from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import yaml
@@ -41,36 +42,65 @@ structlog.configure(
     cache_logger_on_first_use=True,
 )
 
-logger = structlog.get_logger()
+logger = structlog.get_logger(service="validation-engine")
 
 app = Flask(__name__)
-CORS(app)
+# Restrictive CORS only when configured via env
+_cors_origins = [o.strip() for o in os.getenv('CORS_ORIGINS', '').split(',') if o.strip()]
+if _cors_origins:
+    CORS(app, resources={r"/validate/*": {"origins": _cors_origins}})
+else:
+    if os.getenv('FLASK_ENV', 'production').lower() == 'development':
+        CORS(app)
 
 # Prometheus metrics
 VALIDATION_COUNT = Counter('validation_requests_total', 'Total validation requests', ['validation_type'])
 VALIDATION_DURATION = Histogram('validation_duration_seconds', 'Validation duration in seconds', ['validation_type'])
 VALIDATION_SUCCESS = Counter('validation_success_total', 'Successful validations', ['validation_type'])
 VALIDATION_FAILURE = Counter('validation_failure_total', 'Failed validations', ['validation_type'])
+SERVICE_READY = Gauge('validation_engine_ready', 'Readiness status (1=ready, 0=not_ready)')
+ERROR_COUNT = Counter('validation_engine_errors_total', 'Unhandled exceptions')
 
 class DataQualityValidator:
     """Data quality validation engine"""
     
     def __init__(self):
+        def _read_secret(path_env: str, fallback_env: str) -> str:
+            path = os.getenv(path_env)
+            if path and os.path.exists(path):
+                try:
+                    with open(path, 'r', encoding='utf-8') as f:
+                        return f.read().strip()
+                except Exception:
+                    pass
+            return os.getenv(fallback_env, '')
+
         self.db_config = {
             'host': os.getenv('DB_HOST', 'postgres'),
             'database': os.getenv('DB_NAME', 'sap_data_quality'),
             'user': os.getenv('DB_USER', 'sap_user'),
-            'password': os.getenv('DB_PASSWORD', 'your_db_password')
+            'password': _read_secret('DB_PASSWORD_FILE', 'DB_PASSWORD')
         }
         self.rules_path = os.getenv('RULES_PATH', '/app/config/rules')
         self.logger = structlog.get_logger()
         
-        # Initialize database connection
-        self._init_database()
+        # Initialize database connection (non-fatal on failure)
+        try:
+            self._init_database()
+        except Exception as _e:
+            # Already logged inside _init_database; do not crash the service
+            pass
         
     def _init_database(self):
         """Initialize database connection and create tables if needed"""
         try:
+            # Log password length only (avoid leaking secrets)
+            try:
+                _pw_len = len(self.db_config.get('password') or '')
+                self.logger.info("Attempting DB init", pw_len=_pw_len, host=self.db_config.get('host'), db=self.db_config.get('database'), user=self.db_config.get('user'))
+            except Exception:
+                pass
+
             conn = psycopg2.connect(**self.db_config)
             cursor = conn.cursor()
             
@@ -109,7 +139,8 @@ class DataQualityValidator:
             
         except Exception as e:
             self.logger.error("Database initialization failed", error=str(e))
-            raise
+            # Do not raise to keep the process alive; readiness will report not_ready
+            return
     
     def validate_equipment_completeness(self, data: List[Dict]) -> Dict:
         """Validate equipment data completeness"""
@@ -409,6 +440,29 @@ class DataQualityValidator:
         except Exception as e:
             self.logger.error("Failed to save validation results", error=str(e))
 
+# Correlation IDs & error handler
+@app.before_request
+def _before():
+    g.correlation_id = request.headers.get('X-Correlation-Id', str(uuid.uuid4()))
+
+@app.after_request
+def _after(resp):
+    try:
+        resp.headers['X-Correlation-Id'] = g.correlation_id
+    except Exception:
+        pass
+    return resp
+
+@app.errorhandler(Exception)
+def _handle_exc(e):
+    logger.error("unhandled_exception", error=str(e), path=getattr(request, 'path', None),
+                 method=getattr(request, 'method', None), cid=getattr(g, 'correlation_id', None))
+    try:
+        ERROR_COUNT.inc()
+    except Exception:
+        pass
+    return jsonify({"error": "Internal Server Error", "correlation_id": getattr(g, 'correlation_id', None)}), 500
+
 # Initialize validator
 validator = DataQualityValidator()
 
@@ -421,6 +475,35 @@ def health_check():
         "timestamp": datetime.now().isoformat(),
         "version": "1.0.0"
     })
+
+@app.route('/ready', methods=['GET'])
+def readiness_check():
+    """Readiness probe: verify DB connectivity and validator init."""
+    try:
+        _ = validator.db_config.get('host') and validator.db_config.get('database')
+        # Shallow DB check
+        conn = psycopg2.connect(**validator.db_config)
+        conn.close()
+        try:
+            SERVICE_READY.set(1)
+        except Exception:
+            pass
+        return jsonify({
+            "status": "ready",
+            "service": "validation-engine",
+            "timestamp": datetime.now().isoformat()
+        })
+    except Exception as e:
+        logger.error("readiness_check_failed", error=str(e))
+        try:
+            SERVICE_READY.set(0)
+        except Exception:
+            pass
+        return jsonify({
+            "status": "not_ready",
+            "service": "validation-engine",
+            "timestamp": datetime.now().isoformat()
+        }), 503
 
 @app.route('/metrics', methods=['GET'])
 def metrics():

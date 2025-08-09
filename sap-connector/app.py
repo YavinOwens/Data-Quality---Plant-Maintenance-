@@ -9,9 +9,10 @@ import json
 import logging
 from datetime import datetime
 from typing import Dict, List, Optional, Any
+import uuid
 
 import requests
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, g
 from flask_cors import CORS
 import pandas as pd
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
@@ -36,10 +37,17 @@ structlog.configure(
     cache_logger_on_first_use=True,
 )
 
-logger = structlog.get_logger()
+logger = structlog.get_logger(service="sap-connector")
 
 app = Flask(__name__)
-CORS(app)
+# Restrictive CORS in production: allow only configured origins for extract endpoints
+_cors_origins = [o.strip() for o in os.getenv('CORS_ORIGINS', '').split(',') if o.strip()]
+if _cors_origins:
+    CORS(app, resources={r"/extract/*": {"origins": _cors_origins}})
+else:
+    # Default to no CORS restrictions only in development
+    if os.getenv('FLASK_ENV', 'production').lower() == 'development':
+        CORS(app)
 
 # Prometheus metrics
 REQUEST_COUNT = Counter('sap_connector_requests_total', 'Total requests', ['endpoint'])
@@ -50,12 +58,31 @@ class SAPConnector:
     """Handles SAP S/4HANA data extraction"""
     
     def __init__(self):
+        def _read_secret(path_env: str, value_env: str) -> Optional[str]:
+            path = os.getenv(path_env)
+            if path and os.path.exists(path):
+                try:
+                    with open(path, 'r', encoding='utf-8') as f:
+                        return f.read().strip()
+                except Exception:
+                    pass
+            return os.getenv(value_env)
+
         self.sap_host = os.getenv('SAP_HOST')
         self.sap_client = os.getenv('SAP_CLIENT')
-        self.sap_username = os.getenv('SAP_USERNAME')
-        self.sap_password = os.getenv('SAP_PASSWORD')
+        self.sap_username = _read_secret('SAP_USERNAME_FILE', 'SAP_USERNAME')
+        self.sap_password = _read_secret('SAP_PASSWORD_FILE', 'SAP_PASSWORD')
         self.gateway_url = os.getenv('SAP_GATEWAY_URL')
         self.session = requests.Session()
+        # TLS verification: true by default; can be disabled only via explicit env
+        verify_env = os.getenv('SAP_VERIFY_TLS', 'true').lower()
+        self.verify_tls: Optional[bool | str]
+        if verify_env in ('0', 'false', 'no'):
+            self.verify_tls = False
+        else:
+            ca_bundle = os.getenv('SAP_CA_BUNDLE_FILE')
+            self.verify_tls = ca_bundle if ca_bundle and os.path.exists(ca_bundle) else True
+        self.authenticated = False
         self._authenticate()
     
     def _authenticate(self):
@@ -70,7 +97,7 @@ class SAPConnector:
                 'client_id': 'sap_data_quality'
             }
             
-            response = self.session.post(auth_url, data=auth_data, verify=False)
+            response = self.session.post(auth_url, data=auth_data, verify=self.verify_tls)
             response.raise_for_status()
             
             token_data = response.json()
@@ -79,11 +106,26 @@ class SAPConnector:
                 'Content-Type': 'application/json'
             })
             
+            self.authenticated = True
             logger.info("SAP authentication successful")
             
         except Exception as e:
+            self.authenticated = False
             logger.error(f"SAP authentication failed: {str(e)}")
             raise
+
+# Correlation IDs & error handler
+@app.before_request
+def _before_request():
+    g.correlation_id = request.headers.get('X-Correlation-Id', str(uuid.uuid4()))
+
+@app.after_request
+def _after_request(resp):
+    try:
+        resp.headers['X-Correlation-Id'] = g.correlation_id
+    except Exception:
+        pass
+    return resp
     
     def extract_equipment_data(self, limit: int = 1000) -> Dict[str, Any]:
         """Extract equipment master data"""
@@ -207,6 +249,20 @@ def health_check():
         'timestamp': datetime.utcnow().isoformat(),
         'service': 'sap-connector'
     })
+
+@app.route('/ready', methods=['GET'])
+def readiness_check():
+    """Readiness probe: ensure authentication token is present.
+    # TODO: Verify with real SAP by performing a lightweight API call in non-mock environments.
+    """
+    REQUEST_COUNT.labels(endpoint='ready').inc()
+    is_ready = bool(sap_connector.session.headers.get('Authorization')) and sap_connector.authenticated
+    status_code = 200 if is_ready else 503
+    return jsonify({
+        'status': 'ready' if is_ready else 'not_ready',
+        'timestamp': datetime.utcnow().isoformat(),
+        'service': 'sap-connector'
+    }), status_code
 
 @app.route('/metrics', methods=['GET'])
 def metrics():

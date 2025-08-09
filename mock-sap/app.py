@@ -12,7 +12,7 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 import structlog
 import prometheus_client
-from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
+from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
 
 # Configure structured logging
 structlog.configure(
@@ -33,14 +33,21 @@ structlog.configure(
     cache_logger_on_first_use=True,
 )
 
-logger = structlog.get_logger()
+logger = structlog.get_logger(service="mock-sap")
 
 app = Flask(__name__)
-CORS(app)
+# Allow CORS broadly only for local dev; restrict via env otherwise
+import os
+_cors_origins = [o.strip() for o in os.getenv('CORS_ORIGINS', '').split(',') if o.strip()]
+if _cors_origins:
+    CORS(app, resources={r"/extract/*": {"origins": _cors_origins}})
+else:
+    CORS(app)
 
 # Prometheus metrics
 REQUEST_COUNT = Counter('mock_sap_requests_total', 'Total requests to mock SAP', ['endpoint'])
 REQUEST_LATENCY = Histogram('mock_sap_request_duration_seconds', 'Request latency in seconds', ['endpoint'])
+SERVICE_READY = Gauge('mock_sap_ready', 'Readiness status (1=ready, 0=not_ready)')
 
 # Mock PM Data
 EQUIPMENT_DATA = [
@@ -374,6 +381,19 @@ def health_check():
             "timestamp": datetime.now().isoformat(),
             "version": "1.0.0"
         })
+
+@app.route('/ready', methods=['GET'])
+def readiness_check():
+    """Readiness probe for mock service."""
+    try:
+        SERVICE_READY.set(1)
+    except Exception:
+        pass
+    return jsonify({
+        "status": "ready",
+        "service": "mock-sap-pm",
+        "timestamp": datetime.now().isoformat()
+    })
 
 @app.route('/metrics', methods=['GET'])
 def metrics():

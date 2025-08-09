@@ -38,3 +38,29 @@ groups:
             /
             sum(validation_engine_validations_total)
           ) * 100 
+  - name: service_readiness
+    rules:
+      - alert: LoggingServiceNotReady
+        expr: logging_service_ready == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Logging service not ready"
+          description: "logging-service readiness gauge is 0 for more than 2 minutes"
+      - alert: ValidationEngineNotReady
+        expr: validation_engine_ready == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Validation engine not ready"
+          description: "validation-engine readiness gauge is 0 for more than 2 minutes"
+      - alert: MockSAPNotReady
+        expr: mock_sap_ready == 0
+        for: 2m
+        labels:
+          severity: info
+        annotations:
+          summary: "Mock SAP not ready"
+          description: "mock-sap readiness gauge is 0 for more than 2 minutes"

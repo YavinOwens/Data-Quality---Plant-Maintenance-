@@ -151,6 +151,52 @@ Access Prometheus at http://localhost:9090 for:
 - **Business Metrics**: Data quality scores, validation results
 - **Custom Queries**: PromQL queries for custom analysis
 
+## Production Security & Secrets
+
+- Secrets are injected via Docker secrets:
+  - `./secrets/db_password.txt` → mounted as `/run/secrets/db_password`
+  - `./secrets/flask_secret_key.txt` → mounted as `/run/secrets/flask_secret_key`
+- Services read secrets from `*_FILE` envs:
+  - Logging service: `SECRET_KEY_FILE`; Postgres: `POSTGRES_PASSWORD_FILE`
+  - Validation engine: `DB_PASSWORD_FILE`
+  - SAP connector (if enabled): `SAP_USERNAME_FILE`, `SAP_PASSWORD_FILE`, optional `SAP_CA_BUNDLE_FILE` and `SAP_VERIFY_TLS=true|false`
+- Restrictive CORS: configure allowed origins using `CORS_ORIGINS` (comma‑separated). If unset, CORS remains disabled for APIs.
+- Session cookies are secure/HttpOnly with `SameSite` from `SESSION_COOKIE_SAMESITE` and lifetime from `SESSION_LIFETIME_HOURS`.
+- All APIs attach `X-Correlation-Id`; the front‑end logs it on errors. Include it in support tickets.
+- Rate limiting defaults to `60/minute` via `DEFAULT_RATE_LIMIT` and exempts `/health` and `/metrics`.
+
+### AI Agent Feature Toggle
+
+- AI agents are disabled by default in production. Set `AI_AGENTS_ENABLED=true` to enable the AI Agent Hub and related APIs.
+- When disabled, AI endpoints return a controlled error indicating initialization is off.
+
+## Readiness and Health Probes
+
+- Each service exposes both `/health` and `/ready` endpoints. Compose healthchecks target `/ready` to avoid false positives during warm‑up.
+- Logging service readiness includes DB and cache checks. Validation engine readiness touches DB. SAP connector readiness checks token presence (and should be extended with a lightweight API call in non‑mock environments).
+
+<!-- # TODO: Verify readiness endpoints after deployment in your environment. -->
+
+## CI & Tests
+
+- A minimal GitHub Actions workflow runs `pytest -q` on PRs and pushes to `main` and `ai-agents-integration`.
+- Ensure `requirements-test.txt` is up to date if adding tests.
+
+## Production Flow (Summary)
+
+- Secrets via Docker secrets; services read `*_FILE` envs. AI agents disabled by default.
+- Containers run as non‑root; healthchecks use `/ready` and Prometheus scrapes `/metrics`.
+- Readiness Gauges and error Counters exported for alerting.
+
+### Secrets bootstrap
+```bash
+mkdir -p secrets
+openssl rand -hex 32 > secrets/flask_secret_key.txt
+openssl rand -hex 24 > secrets/db_password.txt
+```
+
+# TODO: Verify end‑to‑end with `docker-compose up -d` after populating `./secrets` and `.env`.
+
 ## 🔄 Workflow
 
 1. **Data Extraction**: Mock SAP Service simulates PM data extraction
